@@ -12,6 +12,7 @@ from app.core.correlation import get_correlation_id
 _SECRET_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"xox[baprs]-[A-Za-z0-9-]+"),
     re.compile(r"sk-ant-[A-Za-z0-9_-]+"),
+    re.compile(r"sk-or-[A-Za-z0-9_-]+"),
     re.compile(r"\b\d{10}\b"),  # NUBAN account numbers
 )
 

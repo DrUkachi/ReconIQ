@@ -41,7 +41,7 @@ class FakeAnthropic:
 
 def client_with(payloads=None, fail_times=0) -> tuple[LLMClient, FakeAnthropic]:
     fake = FakeAnthropic(payloads, fail_times)
-    return LLMClient(api_key="test", model="claude-sonnet-5", client=fake), fake
+    return LLMClient(api_key="test", model="claude-sonnet-5", client=fake, provider="anthropic"), fake
 
 
 def test_there_are_exactly_five_call_sites():

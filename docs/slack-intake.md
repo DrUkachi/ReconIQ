@@ -1,5 +1,32 @@
 # Slack intake
 
+## Conversational replies with OpenRouter
+
+Set `LLM_PROVIDER=openrouter`, `OPENROUTER_API_KEY`,
+`OPENROUTER_API_URL=https://openrouter.ai/api/v1/chat/completions`,
+`OPENROUTER_MODEL=openai/gpt-5.6-luna`, and
+`OPENROUTER_REASONING_ENABLED=true` in the ignored backend `.env`. Apply migration
+0004, then restart the gateway/API and worker. The key is required for model calls;
+the deterministic intake workflow does not need it. No silent fallback to a different
+model/provider is configured. Run `python -m scripts.check_openrouter` to verify
+two real provider calls using non-financial example prompts.
+
+In Account Team, send `@ReconIQ hello, how do I upload my files?`, then reply in
+that thread with a follow-up. Questions inside an intake thread use its stored
+status and per-currency summary. Chat cannot approve, close, or change financial
+records; those actions are not available as model tools. Conversations are isolated
+by workspace, channel and thread. Up to eight prior successful turns are included,
+with any `reasoning_details` preserved unchanged in the database and subsequent
+requests; Slack receives only the visible answer. Both initial and subsequent calls
+send the authorization header. See [OpenRouter reasoning support](https://openrouter.ai/docs/guides/best-practices/reasoning-tokens).
+
+To receive DMs as well, enable the `message.im` bot event and grant `im:history`.
+DM chat directs uploads to Account Team. Edits, bots and unrelated channel messages
+do not trigger AI replies. Repeated delivery of the same Slack message creates one
+stored reply/outbox entry. Provider failures produce a safe fallback instead of
+blocking intake. Structured AI extraction helpers also use OpenRouter when selected
+and validate responses against their existing schemas.
+
 In the configured Account Team channel, mention the bot:
 
 `@ReconIQ reconcile August 2026 account 1234`

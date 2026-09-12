@@ -18,6 +18,7 @@ slack-sdk
 aiohttp>=3.10,<4
 
 httpx
+jsonschema>=4,<5
 prometheus-client
 itsdangerous
 

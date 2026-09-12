@@ -1,4 +1,5 @@
 from functools import lru_cache
+from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -20,6 +21,13 @@ class Settings(BaseSettings):
     web_app_url: str = ""
 
     anthropic_api_key: str = ""
+    llm_provider: Literal["anthropic", "openrouter"] = "anthropic"
+    openrouter_api_key: str = ""
+    openrouter_api_url: str = "https://openrouter.ai/api/v1/chat/completions"
+    openrouter_model: str = "openai/gpt-5.6-luna"
+    openrouter_reasoning_enabled: bool = True
+    openrouter_timeout_seconds: float = 60
+    openrouter_max_tokens: int = 4096
     # PRD section 18 pins claude-sonnet-4-6. Sonnet 5 is the current generation of the
     # same tier: cheaper ($2/$10 vs $3/$15 per 1M) and stronger. Override to pin back.
     anthropic_model: str = "claude-sonnet-5"

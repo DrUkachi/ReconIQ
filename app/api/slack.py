@@ -12,6 +12,8 @@ from app.models.base import utcnow
 from app.models.infra import ProcessedEvent, ProcessedInteraction
 from app.models.core import Workspace
 from app.models.slack_intake import SlackIntake
+from app.models.slack_chat import SlackChatTurn
+from app.services.slack.intake_rules import is_intake_update
 from app.services.jobs import queue
 from app.services.slack.events import Route, classify_event, classify_interaction, is_retry
 from app.services.slack.verify import SignatureError, verify_signature
@@ -94,7 +96,15 @@ async def events(request: Request, session: SessionDep, settings: SettingsDep) -
                 SlackIntake.thread_ts == thread,
             ))
             if known_intake:
-                route = Route("slack_intake", {"team_id": workspace.slack_team_id, "event_id": event_id, "event": event})
+                kind = "slack_intake" if is_intake_update(event) else "agent_turn"
+                route = Route(kind, {"team_id": workspace.slack_team_id, "event_id": event_id, "event": event})
+            elif event.get("thread_ts"):
+                known_chat = await session.scalar(select(SlackChatTurn.id).where(
+                    SlackChatTurn.workspace_id == workspace.id, SlackChatTurn.channel_id == event.get("channel"),
+                    SlackChatTurn.thread_ts == thread).limit(1))
+                if known_chat:
+                    kind = "slack_intake" if is_intake_update(event) and event.get("channel_type") != "im" else "agent_turn"
+                    route = Route(kind, {"team_id": workspace.slack_team_id, "event_id": event_id, "event": event})
     if route.ignored:
         await session.commit()
         logger.info(

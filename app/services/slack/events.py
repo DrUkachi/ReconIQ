@@ -87,6 +87,9 @@ def classify_event(envelope: dict[str, Any], *, bot_user_id: str | None = None) 
         # user == the bot is precisely the event that triggers backfill.
         if bot_user_id and event.get("user") == bot_user_id:
             return _ignore("our own message")
+        if event.get("subtype") in {None, "file_share"} and bot_user_id and f"<@{bot_user_id}>" in (event.get("text") or ""):
+            kind = "slack_intake" if is_intake_command(event.get("text", "")) or event.get("files") else "agent_turn"
+            return Route(kind, {**common, "event": event})
         return _classify_message(event, common)
 
     if event_type == "file_shared":
@@ -116,10 +119,10 @@ def _classify_message(event: dict[str, Any], common: dict[str, Any]) -> Route:
     if subtype in IGNORED_MESSAGE_SUBTYPES:
         return _ignore(f"message subtype {subtype!r}")
 
+    if event.get("channel_type") == "im":
+        return Route("agent_turn", {**common, "event": event})
     if event.get("files"):
         return Route("ingest_file", {**common, "event": event})
-    if is_intake_command(event.get("text", "")) and (event.get("channel_type") == "im"):
-        return Route("slack_intake", {**common, "event": event})
 
     # A reply inside a case thread is case work, not ambient conversation. The
     # worker resolves whether thread_ts belongs to a case; routing cannot know.

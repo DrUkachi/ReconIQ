@@ -1,6 +1,7 @@
 from app.models.base import Base
 from app.models.imports import SourceImport
 from app.models.slack_intake import SlackIntake, SlackIntakeFile
+from app.models.slack_chat import SlackChatTurn
 from app.models.cases import (
     CaseEvidence,
     CaseMatchKey,
@@ -58,6 +59,7 @@ __all__ = [
     "SourceImport",
     "SlackIntake",
     "SlackIntakeFile",
+    "SlackChatTurn",
     "TransactionMatch",
     "Workspace",
     "WorkspaceClaim",

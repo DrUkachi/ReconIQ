@@ -18,7 +18,10 @@ async def readiness_report() -> dict[str, Any]:
     checks["database"] = await _check_database()
     checks["migrations"] = await _check_migrations()
     checks["slack"] = _check_configured(settings.slack_bot_token, "SLACK_BOT_TOKEN")
-    checks["anthropic"] = _check_configured(settings.anthropic_api_key, "ANTHROPIC_API_KEY")
+    if settings.llm_provider == "openrouter":
+        checks["openrouter"] = _check_configured(settings.openrouter_api_key, "OPENROUTER_API_KEY")
+    else:
+        checks["anthropic"] = _check_configured(settings.anthropic_api_key, "ANTHROPIC_API_KEY")
 
     return {"ready": all(c["ok"] for c in checks.values()), "checks": checks}
 

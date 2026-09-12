@@ -1,5 +1,30 @@
 # Handoff log
 
+## Update: OpenRouter conversational replies, 2026-09-12
+
+Configured provider `openrouter`, endpoint `/api/v1/chat/completions` on
+openrouter.ai, and model `openai/gpt-5.6-luna` with reasoning enabled. The public
+OpenRouter model catalog confirms that exact model and reasoning/structured-output
+support. Existing structured helpers now select the configured provider and
+validate OpenRouter JSON against their schemas. Auth is sent on every call; errors
+are sanitized and OpenRouter keys are redacted in logs.
+
+Slack mentions/questions now receive read-only AI replies through the durable
+outbox. Intake commands remain deterministic. Migration 0004 persists conversation
+turns with replay protection and unchanged reasoning_details for up to eight prior
+successful turns in the same workspace/channel/thread; reasoning is never posted
+to Slack. Intake-thread answers receive only that thread's stored status and
+summary. No financial mutation tools are exposed to chat.
+
+Verification: 408 tests passed with PostgreSQL (one dependency deprecation warning).
+Migration 0004 applied to local demo/test databases. The harmless two-turn live
+check is `python -m scripts.check_openrouter`. The saved key was subsequently
+verified with two successful requests to the exact configured model. Both answered
+the harmless strawberry question correctly. This response did not include
+reasoning_details; tests verify preservation when supplied. The gateway and worker
+were restarted to load the key and chat routing; the existing public HTTPS endpoint
+returned health 200. No Slack messages were sent by the automated tests.
+
 ## Update: live HTTPS intake connection, 2026-09-12
 
 Created `app.slack_gateway` exposing only health and signed Slack events, with a

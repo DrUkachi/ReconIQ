@@ -18,7 +18,23 @@ class IntakeContext:
 
 
 def is_intake_command(text: str) -> bool:
-    return bool(re.search(r"\b(reconcile|reconciliation|intake)\b", text, re.I))
+    clean = re.sub(r"<@[^>]+>", "", text).strip()
+    return bool(re.match(r"(?:please\s+)?(?:(?:start|begin|run)\s+(?:a\s+)?)?(reconcile|reconciliation|intake)\b", clean, re.I))
+
+
+def is_intake_update(event: dict) -> bool:
+    if event.get("files") or event.get("type") == "file_shared":
+        return True
+    clean = re.sub(r"<@[^>]+>", "", event.get("text") or "").strip()
+    if is_intake_command(clean) or clean.lower() in {"retry", "cancel", "status"}:
+        return True
+    if re.search(r"\breplace\s+(ledger|statement|bank)\b", clean, re.I):
+        return True
+    # Questions about an account or month must not edit the intake context.
+    if "?" in clean or re.match(r"(?:what|why|how|when|where|who|can|could|would|is|does|do|explain)\b", clean, re.I):
+        return False
+    context = parse_context(clean)
+    return bool(context.start or context.account or context.error)
 
 
 def parse_context(text: str) -> IntakeContext:

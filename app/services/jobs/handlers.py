@@ -67,6 +67,8 @@ async def case_thread_reply(job) -> None:
     """A reply in a case thread: L5 intent parsing, then the matching action."""
     from app.core.db import get_sessionmaker
     from app.models.slack_intake import SlackIntake
+    from app.models.slack_chat import SlackChatTurn
+    from app.services.slack.intake_rules import is_intake_update
     from sqlalchemy import select
     event = job.payload.get("event", {})
     async with get_sessionmaker()() as session:
@@ -74,8 +76,15 @@ async def case_thread_reply(job) -> None:
             SlackIntake.workspace_id == job.workspace_id,
             SlackIntake.channel_id == event.get("channel"),
             SlackIntake.thread_ts == event.get("thread_ts")))
+        chat = await session.scalar(select(SlackChatTurn.id).where(
+            SlackChatTurn.workspace_id == job.workspace_id,
+            SlackChatTurn.channel_id == event.get("channel"),
+            SlackChatTurn.thread_ts == event.get("thread_ts")).limit(1))
     if intake:
-        await ingest_file(job)
+        await (ingest_file(job) if is_intake_update(event) else agent_turn(job))
+        return
+    if chat:
+        await agent_turn(job)
         return
     raise NotImplementedError("Case resolution replies are outside intake scope")
 
@@ -85,9 +94,8 @@ async def backfill_channel(job) -> None:
 
 
 async def agent_turn(job) -> None:
-    # Until the broader assistant is wired, mentions in the intake channel open
-    # the deterministic intake prompt instead of parking an unhandled job.
-    await ingest_file(job)
+    from app.services.slack.chat import handle_chat
+    await handle_chat(job)
 
 
 async def app_home(job) -> None:

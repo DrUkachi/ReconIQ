@@ -100,6 +100,25 @@ CREATE TABLE job (
 );
 CREATE INDEX ix_job_pending ON job (state, created_at) WHERE state = 'PENDING';
 
+CREATE TABLE slack_chat_turn (
+	id UUID NOT NULL,
+	workspace_id UUID NOT NULL,
+	channel_id VARCHAR(32) NOT NULL,
+	thread_ts VARCHAR(32) NOT NULL,
+	message_ts VARCHAR(32) NOT NULL,
+	actor_slack_id VARCHAR(32) NOT NULL,
+	user_text TEXT NOT NULL,
+	assistant_message JSONB NOT NULL,
+	model VARCHAR(128) NOT NULL,
+	error_code VARCHAR(80),
+	created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,
+	updated_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,
+	CONSTRAINT pk_slack_chat_turn PRIMARY KEY (id),
+	CONSTRAINT one_chat_reply_per_message UNIQUE (workspace_id, channel_id, message_ts),
+	CONSTRAINT fk_slack_chat_turn_workspace_id_workspace FOREIGN KEY(workspace_id) REFERENCES workspace (id)
+);
+CREATE INDEX ix_slack_chat_thread ON slack_chat_turn (workspace_id, channel_id, thread_ts);
+
 CREATE TABLE reconciliation (
 	id UUID NOT NULL,
 	workspace_id UUID NOT NULL,

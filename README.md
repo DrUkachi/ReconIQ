@@ -12,6 +12,11 @@ result delivery. See [Slack setup and usage](docs/slack-intake.md). Live operati
 requires installed file scopes, channel membership, a verified HTTPS events URL,
 and running API/worker processes.
 
+Optional conversational Slack replies use OpenRouter when `LLM_PROVIDER=openrouter`.
+Configure `OPENROUTER_API_KEY` locally; the selected model is
+`openai/gpt-5.6-luna` with reasoning enabled. Run
+`python -m scripts.check_openrouter` for a two-turn provider check.
+
 ---
 
 ## The pattern

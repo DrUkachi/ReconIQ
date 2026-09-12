@@ -52,11 +52,13 @@ class LLMClient:
         model: str | None = None,
         budget: RunBudget | None = None,
         client: Any = None,
+        provider: str | None = None,
     ) -> None:
         settings = get_settings()
-        self.model = model or settings.anthropic_model
+        self.provider = provider or settings.llm_provider
+        self.model = model or (settings.openrouter_model if self.provider == "openrouter" else settings.anthropic_model)
         self.budget = budget or RunBudget(total_limit=settings.llm_call_budget_per_run)
-        self._api_key = api_key if api_key is not None else settings.anthropic_api_key
+        self._api_key = api_key if api_key is not None else (settings.openrouter_api_key if self.provider == "openrouter" else settings.anthropic_api_key)
         self._client = client
 
     @property
@@ -89,11 +91,28 @@ class LLMClient:
         """
         self.budget.check(site, scope_limit)
         schema = SCHEMAS[site]
-        client = self._anthropic()
+        if self.provider == "openrouter":
+            from app.services.llm.openrouter import OpenRouterClient
+            client = self._client or OpenRouterClient(api_key=self._api_key, model=self.model)
+        else:
+            client = self._anthropic()
 
         last_error: Exception | None = None
         for attempt in range(2):
             try:
+                if self.provider == "openrouter":
+                    import jsonschema
+                    self.budget.check(site, scope_limit)
+                    self.budget.consume(site)
+                    message = client.complete(
+                        [{"role": "system", "content": system}, {"role": "user", "content": user}],
+                        response_format={"type": "json_schema", "json_schema": {
+                            "name": site.value.lower(), "strict": True, "schema": schema}},
+                        max_tokens=max(2048, max_tokens),
+                    )
+                    value = json.loads(message["content"])
+                    jsonschema.validate(value, schema)
+                    return value
                 response = client.messages.create(
                     model=self.model,
                     max_tokens=max_tokens,
@@ -121,7 +140,7 @@ class LLMClient:
                         "error_code": type(exc).__name__,
                     },
                 )
-        raise LLMUnavailable(str(last_error))
+        raise LLMUnavailable(type(last_error).__name__)
 
     # --- L1: column map assist -------------------------------------------------
 
