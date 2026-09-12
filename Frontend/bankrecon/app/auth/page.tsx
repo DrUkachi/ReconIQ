@@ -1,11 +1,20 @@
 import { AuthCard } from "../components/auth/auth-card";
 
-export default function AuthPage({
+export default async function AuthPage({
   searchParams,
 }: {
-  searchParams?: Promise<{ auth_error?: string }>;
+  searchParams?: Promise<{
+    auth_error?: string;
+    screen_hint?: "login" | "signup" | string;
+    mode?: "login" | "signup" | string;
+  }>;
 }) {
-  const missingAuthConfig = searchParams ? (searchParams as any)?.auth_error === "missing_auth0_config" : false;
+  const resolvedSearchParams = searchParams ? await searchParams : {};
+  const missingAuthConfig = resolvedSearchParams.auth_error === "missing_auth0_config";
+  const initialMode =
+    resolvedSearchParams.screen_hint === "signup" || resolvedSearchParams.mode === "signup"
+      ? "signup"
+      : "login";
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-[radial-gradient(circle_at_top,_#ecfeff_0%,_#f8fafc_35%,_#e2e8f0_100%)] px-4 py-10">
@@ -37,7 +46,7 @@ export default function AuthPage({
           </a>
         </div>
       ) : (
-        <AuthCard mode="login" />
+        <AuthCard mode={initialMode} />
       )}
     </main>
   );

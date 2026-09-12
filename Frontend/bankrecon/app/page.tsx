@@ -20,13 +20,13 @@ export default function Home() {
 
           <div className="flex items-center gap-3">
             <a
-              href="/auth/login"
+              href="/login"
               className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
             >
               Login
             </a>
             <a
-              href="/auth/login?screen_hint=signup"
+              href="/signup"
               className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800"
             >
               Register
@@ -53,19 +53,19 @@ export default function Home() {
 
             <div className="flex flex-col gap-3 sm:flex-row">
               <a
-                href="/auth/login?screen_hint=signup"
+                href="/signup"
                 className="inline-flex items-center justify-center rounded-xl bg-slate-900 px-6 py-3 text-base font-semibold text-white transition hover:bg-slate-800"
               >
                 Get Started
               </a>
               <a
-                href="/auth/login"
+                href="/login"
                 className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-6 py-3 text-base font-semibold text-slate-700 transition hover:bg-slate-50"
               >
                 Login
               </a>
               <a
-                href="/auth/login?screen_hint=signup"
+                href="/signup"
                 className="inline-flex items-center justify-center rounded-xl border border-cyan-200 bg-cyan-50 px-6 py-3 text-base font-semibold text-cyan-700 transition hover:bg-cyan-100"
               >
                 Register
@@ -204,7 +204,7 @@ export default function Home() {
               <li>• Team collaboration tools</li>
             </ul>
             <a
-              href="/auth/login?screen_hint=signup"
+              href="/signup"
               className="mt-6 inline-flex items-center justify-center rounded-xl bg-cyan-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-cyan-500"
             >
               Try RekonIQ
@@ -224,7 +224,7 @@ export default function Home() {
             <div className="flex flex-wrap items-center gap-6">
               <a href="#features" className="transition hover:text-slate-900">Features</a>
               <a href="#why" className="transition hover:text-slate-900">Why it works</a>
-              <a href="/auth/login" className="transition hover:text-slate-900">Access app</a>
+              <a href="/login" className="transition hover:text-slate-900">Access app</a>
             </div>
 
             <p>© 2026 RekonIQ. Built for finance teams.</p>
