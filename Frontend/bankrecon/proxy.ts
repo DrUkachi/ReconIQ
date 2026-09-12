@@ -1,14 +1,11 @@
 import { NextResponse } from "next/server";
-import { auth0 } from "./lib/auth0";
+import { auth0, hasAuth0Config } from "./lib/auth0";
 
 export async function proxy(request: Request) {
-  if (
-    !process.env.AUTH0_DOMAIN ||
-    !process.env.AUTH0_CLIENT_ID ||
-    !process.env.AUTH0_CLIENT_SECRET ||
-    !process.env.AUTH0_SECRET
-  ) {
-    return NextResponse.next();
+  if (!hasAuth0Config) {
+    const url = new URL("/auth", request.url);
+    url.searchParams.set("auth_error", "missing_auth0_config");
+    return NextResponse.redirect(url);
   }
 
   return auth0.middleware(request);
