@@ -1,5 +1,88 @@
 # Handoff log
 
+## Update: live HTTPS intake connection, 2026-09-12
+
+Created `app.slack_gateway` exposing only health and signed Slack events, with a
+focused route/authentication test passing. Started the gateway on 127.0.0.1:8011,
+the background worker, and an official Cloudflare development tunnel. Runtime
+logs, process IDs and current public URL are under ignored `.local/slack/`.
+Verified public health 200, data/docs routes 404, unsigned event 401, and signed
+verification challenge 200 with the expected response. No synthetic user events
+or Slack messages were sent for this check.
+
+Updated the supplied bot token in `.env` and local workspace configuration.
+Slack now reports files:read and channels:read; bot membership is confirmed in
+Account Team, Payment Ops, and Treasury. Browser automation reports no available
+browser, so saving the generated Request URL and event subscriptions in Slack
+has been handed to the user. A response to our signed challenge is not evidence
+that Slack app settings have been saved. Await the user's confirmation/live event.
+
+## Update: Slack intake, 2026-09-12
+
+Implemented durable thread intake, original PDF/CSV downloads and parsing, account
+and period prompts, separate context/validation files, role/channel isolation,
+explicit pre-processing replacement, retry/cancel, idempotent imports/matching,
+per-currency summaries, and durable outbox posting with rate-limit handling.
+Migration 0003 was applied to local demo and test databases. Windows worker signal
+handling and the async Slack SDK dependency are included. Setup instructions and
+an example app manifest are in `docs/slack-intake.md` and
+`slack-intake-manifest.example.json`.
+
+Verification: 377 tests passed with PostgreSQL, including 35 new Slack tests.
+One existing Starlette/AnyIO deprecation warning remains. Slack auth and the supplied
+human member ID were verified live; the workspace and owner are registered locally.
+Credentials are saved only in the ignored backend `.env` and the local workspace
+configuration. No live Slack messages or uploads have been sent by this session.
+
+Live intake still needs `files:read` and `channels:read` added to the installed app
+(plus private-channel scopes where applicable), app reinstall, verified channel
+membership, and a reachable Events API Request URL with API/worker processes
+running. Latest scope check lacked those two scopes. Case approvals and ambient
+evidence/listener handlers remain separate unfinished work; do not claim the full
+product is live based on intake tests.
+
+## Update: database import and matching, 2026-09-12
+
+`scripts.reconcile_inputs` now commits the signed source snapshots, selected
+currency/period rows, existing-engine matches, exception cases, match keys and
+audit records in one transaction. `scripts/run_local_demo.ps1` runs the provisioned
+Windows demo database. Source files remain unchanged. The `run_matching` worker
+handler is wired and replay-safe; other previously stubbed handlers remain stubs.
+
+The source/period uniqueness constraints now include currency. Migration 0002
+upgrades existing databases; regenerated 0001 supports new databases. Two fresh
+database blockers were fixed: asyncpg cannot prepare a multi-statement SQL script,
+and the evidence trigram index needed an immutable text-array wrapper.
+
+The supplied inputs produce three saved currency runs using the original matching
+policy. This does not implement the guide's group matching, invoice-conflict
+precedence, or alternative tolerances. Rows may still remain unmatched without
+cases under the existing exception typing rules. No Slack messages are sent and
+no run is marked complete automatically.
+
+Verification: 342 tests passed with real PostgreSQL, including replay, concurrent
+imports/matching, rollback, database row-reuse constraints, worker execution,
+permissions and workspace isolation. Credentials and DB files are local-only in
+ignored `.local/`. The earlier handoff's claim of no local Postgres is superseded.
+
+## Update: signed source ingestion, 2026-09-12
+
+`app/services/ingestion/` now reads the supplied five-column signed bank PDF and
+ledger CSV without changing the originals. `python -m scripts.inspect_inputs`
+provides a local ingestion report (see README). Raw cells, source hashes and row
+locations are retained, invalid rows are reported, and matching inputs are split
+by currency after applying an explicit period cutoff. This does not wire the
+background jobs or persist records. The legacy debit/credit extraction path is
+unchanged. Database idempotency and the demo guide's group-matching rules remain
+unfinished.
+
+Unmodified synthetic inputs are in `tests/fixtures/signed_exports/`; tests verify
+57 bank rows, 52 ledger rows, per-currency control totals, two period exclusions,
+and the separate ingestion fixture's 11 rejected / 5 accepted rows. Existing date
+ambiguity error formatting now works on Windows as well as Unix.
+
+The original handoff below describes the baseline before this addition.
+
 **For:** an AI coding agent (Codex, Claude, or similar) picking this repo up cold.
 **Spec:** `BANKRECON_PRD_v2.md` — ask the repo owner for it if it is not in the tree.
 **Last updated:** after the Slack event router landed.

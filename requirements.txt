@@ -15,6 +15,7 @@ rapidfuzz
 
 anthropic
 slack-sdk
+aiohttp>=3.10,<4
 
 httpx
 prometheus-client

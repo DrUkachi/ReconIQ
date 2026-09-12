@@ -180,4 +180,4 @@ def _second_number(raw: str) -> int | None:
 
 def _describe(raw: str, candidate: DateFormatCandidate) -> str:
     parsed = _try_parse(raw, candidate)
-    return parsed.strftime("%-d %B") if parsed else candidate.name
+    return f"{parsed.day} {parsed:%B}" if parsed else candidate.name

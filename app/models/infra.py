@@ -92,6 +92,8 @@ class SlackOutbox(Base):
     )
 
     id: Mapped[uuid.UUID] = uuid_pk()
+    idempotency_key: Mapped[str | None] = mapped_column(String(255), unique=True)
+    available_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
     workspace_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("workspace.id", ondelete="CASCADE"), nullable=False
     )

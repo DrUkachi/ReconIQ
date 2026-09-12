@@ -2,6 +2,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from app.services.evidence.extract import is_indexable
+from app.services.slack.intake_rules import is_intake_command
 
 # PRD section 09. Routing is a pure function over the Slack envelope so the whole
 # decision table is testable without HTTP, Slack, or a database.
@@ -77,6 +78,8 @@ def classify_event(envelope: dict[str, Any], *, bot_user_id: str | None = None) 
         return _ignore("bot message")
 
     if event_type == "app_mention":
+        if is_intake_command(event.get("text", "")) or event.get("files"):
+            return Route("slack_intake", {**common, "event": event})
         return Route("agent_turn", {**common, "event": event, "trigger": "app_mention"})
 
     if event_type == "message":
@@ -112,6 +115,11 @@ def _classify_message(event: dict[str, Any], common: dict[str, Any]) -> Route:
         return Route("tombstone_message", {**common, "event": event})
     if subtype in IGNORED_MESSAGE_SUBTYPES:
         return _ignore(f"message subtype {subtype!r}")
+
+    if event.get("files"):
+        return Route("ingest_file", {**common, "event": event})
+    if is_intake_command(event.get("text", "")) and (event.get("channel_type") == "im"):
+        return Route("slack_intake", {**common, "event": event})
 
     # A reply inside a case thread is case work, not ambient conversation. The
     # worker resolves whether thread_ts belongs to a case; routing cannot know.

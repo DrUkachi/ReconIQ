@@ -23,8 +23,13 @@ FOOTER = """-- PRD section 11: audit is append only, enforced by the database, n
 REVOKE UPDATE, DELETE ON audit_event FROM bankrecon_app;
 
 -- Trigram index backing counterparty recall in the evidence search (PRD 6.4).
+-- array_to_string(anyarray, text) is STABLE because some element types depend on
+-- session settings. For text[] with a fixed separator, this wrapper is immutable.
+CREATE OR REPLACE FUNCTION evidence_counterparty_text(text[]) RETURNS text
+LANGUAGE sql IMMUTABLE PARALLEL SAFE
+AS $$ SELECT array_to_string($1, ' ') $$;
 CREATE INDEX ix_evidence_counterparty_trgm ON conversation_evidence
-  USING GIN (array_to_string(counterparties, ' ') gin_trgm_ops);
+  USING GIN (evidence_counterparty_text(counterparties) gin_trgm_ops);
 """
 
 
@@ -37,7 +42,7 @@ def render() -> str:
             parts.append(str(CreateIndex(index).compile(dialect=dialect)).strip() + ";")
         parts.append("")
     parts.append(FOOTER)
-    return "\n".join(parts)
+    return "\n".join(line.rstrip() for line in "\n".join(parts).splitlines()) + "\n"
 
 
 if __name__ == "__main__":

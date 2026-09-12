@@ -37,6 +37,8 @@ class Workspace(Base, TimestampMixin):
     slack_team_id: Mapped[str] = mapped_column(String(32), unique=True, nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     bot_token: Mapped[str | None] = mapped_column(Text)
+    bot_user_id: Mapped[str | None] = mapped_column(String(32))
+    slack_retry_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     recon_channel_id: Mapped[str | None] = mapped_column(String(32))
     approval_value_threshold_minor: Mapped[int] = mapped_column(
         BigInteger, nullable=False, default=50_000_000
@@ -68,6 +70,7 @@ class Reconciliation(Base, TimestampMixin):
             "account_last4",
             "period_start",
             "period_end",
+            "currency",
             name="uniq_period",
         ),
         Index("ix_reconciliation_workspace_state", "workspace_id", "state"),
@@ -96,7 +99,7 @@ class Statement(Base, TimestampMixin):
     __table_args__ = (
         # PRD hard constraint 1: one statement per reconciliation.
         UniqueConstraint("reconciliation_id", name="one_per_recon"),
-        UniqueConstraint("workspace_id", "content_sha256", name="uniq_content"),
+        UniqueConstraint("workspace_id", "content_sha256", "currency", name="uniq_content"),
     )
 
     id: Mapped[uuid.UUID] = uuid_pk()
@@ -109,6 +112,7 @@ class Statement(Base, TimestampMixin):
     slack_file_id: Mapped[str | None] = mapped_column(String(32))
     filename: Mapped[str] = mapped_column(String(512), default="")
     content_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False, default="NGN")
     byte_size: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     page_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     storage_path: Mapped[str | None] = mapped_column(Text)

@@ -42,7 +42,7 @@ def build_run_summary(
     currency: str = "NGN",
 ) -> dict[str, Any]:
     blocks = [
-        _section(f"*{period} reconciliation complete*"),
+        _section(f"*{period} processing finished*"),
         {
             "type": "section",
             "fields": [
@@ -57,7 +57,7 @@ def build_run_summary(
                 {"type": "mrkdwn", "text": f"*Extraction confidence*\n{confidence}%"},
             ],
         },
-        _context("Cases are grouped and owned. Open a thread to work one."),
+        _context("Review outstanding items before closing the reconciliation."),
     ]
     return {
         "blocks": blocks,

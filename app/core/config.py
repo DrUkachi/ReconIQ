@@ -15,6 +15,9 @@ class Settings(BaseSettings):
     slack_app_token: str = ""
     slack_client_id: str = ""
     slack_client_secret: str = ""
+    slack_recon_channel_id: str = ""
+    slack_evidence_channel_ids: str = ""
+    web_app_url: str = ""
 
     anthropic_api_key: str = ""
     # PRD section 18 pins claude-sonnet-4-6. Sonnet 5 is the current generation of the
@@ -54,6 +57,7 @@ class Settings(BaseSettings):
     # Extraction limits, PRD section 6.1.
     max_pdf_bytes: int = 10 * 1024 * 1024
     max_pdf_pages: int = 50
+    max_csv_bytes: int = 10 * 1024 * 1024
     ocr_timeout_seconds: int = 90
 
 

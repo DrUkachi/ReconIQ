@@ -17,12 +17,30 @@ async def extract_statement(job) -> None:
 
 
 async def run_matching(job) -> None:
-    raise NotImplementedError("wire to app.services.matching.engine.run_matching")
+    import uuid
+
+    from app.core.db import get_sessionmaker
+    from app.core.errors import BankReconError, ErrorCode
+    from app.services.matching.persistence import match_reconciliation
+
+    try:
+        reconciliation_id = uuid.UUID(str(job.payload["reconciliation_id"]))
+        workspace_id = uuid.UUID(str(job.workspace_id))
+    except (KeyError, ValueError, TypeError) as exc:
+        raise BankReconError(ErrorCode.E_VALIDATION, detail="A matching job needs workspace and reconciliation IDs.") from exc
+    async with get_sessionmaker()() as session:
+        async with session.begin():
+            await match_reconciliation(session, reconciliation_id=reconciliation_id, workspace_id=workspace_id)
 
 
 async def ingest_file(job) -> None:
-    """file_shared: fetch from files.slack.com, validate, then enqueue extraction."""
-    raise NotImplementedError("wire to file intake + app.services.extraction.validate")
+    from app.services.slack.intake import handle_intake_event
+    await handle_intake_event(job)
+
+
+async def process_intake(job) -> None:
+    from app.services.slack.intake import process_intake as process
+    await process(job)
 
 
 async def index_message(job) -> None:
@@ -47,7 +65,19 @@ async def run_listener(job) -> None:
 
 async def case_thread_reply(job) -> None:
     """A reply in a case thread: L5 intent parsing, then the matching action."""
-    raise NotImplementedError("wire to app.services.llm.client.parse_reply_intent")
+    from app.core.db import get_sessionmaker
+    from app.models.slack_intake import SlackIntake
+    from sqlalchemy import select
+    event = job.payload.get("event", {})
+    async with get_sessionmaker()() as session:
+        intake = await session.scalar(select(SlackIntake.id).where(
+            SlackIntake.workspace_id == job.workspace_id,
+            SlackIntake.channel_id == event.get("channel"),
+            SlackIntake.thread_ts == event.get("thread_ts")))
+    if intake:
+        await ingest_file(job)
+        return
+    raise NotImplementedError("Case resolution replies are outside intake scope")
 
 
 async def backfill_channel(job) -> None:
@@ -55,7 +85,9 @@ async def backfill_channel(job) -> None:
 
 
 async def agent_turn(job) -> None:
-    raise NotImplementedError("wire to app.services.agent.orchestrator")
+    # Until the broader assistant is wired, mentions in the intake channel open
+    # the deterministic intake prompt instead of parking an unhandled job.
+    await ingest_file(job)
 
 
 async def app_home(job) -> None:
@@ -72,6 +104,8 @@ async def interaction(job) -> None:
 
 
 REGISTRY: dict[str, JobHandler] = {
+    "slack_intake": ingest_file,
+    "process_intake": process_intake,
     "extract_statement": extract_statement,
     "run_matching": run_matching,
     "ingest_file": ingest_file,
