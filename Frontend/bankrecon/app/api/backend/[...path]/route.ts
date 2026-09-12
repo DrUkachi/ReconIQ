@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
+import { backendHeaders } from "@/app/lib/backend-auth";
 import { BACKEND_API_BASE_URL, BACKEND_SESSION_COOKIE } from "@/app/lib/config";
 
 const responseHeaders = [
@@ -24,7 +25,7 @@ async function proxyRequest(
 
   const cookieStore = await cookies();
   const backendSession = cookieStore.get(BACKEND_SESSION_COOKIE)?.value;
-  const headers = new Headers(request.headers);
+  const headers = backendHeaders(request.headers);
 
   headers.delete("host");
   headers.delete("cookie");

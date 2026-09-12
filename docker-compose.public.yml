@@ -1,0 +1,6 @@
+# Lightning studio deployment. Lightning's routable public endpoint is port 3000, so the
+# API is published there in addition to 8000. Used by scripts/start_backend.sh.
+services:
+  api:
+    ports:
+      - "3000:8000"

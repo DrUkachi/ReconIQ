@@ -1,0 +1,51 @@
+# Render Blueprint, free tier. Free instances cannot run background workers, so the API
+# and the job worker share one web service (scripts/render_start.sh). Render deletes a
+# free Postgres database 30 days after creation unless it is upgraded.
+services:
+  - type: web
+    name: reconiq-api
+    runtime: docker
+    plan: free
+    region: virginia
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    dockerCommand: bash scripts/render_start.sh
+    healthCheckPath: /healthz
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: reconiq-db
+          property: connectionString
+      - key: WEB_APP_URL
+        value: https://rekoniq.vercel.app
+      - key: LLM_PROVIDER
+        value: openrouter
+      - key: DEMO_MODE
+        value: "false"
+      - key: LOG_LEVEL
+        value: INFO
+      # Must equal INTERNAL_API_TOKEN in the Vercel project.
+      - key: INTERNAL_API_TOKEN
+        sync: false
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: SLACK_BOT_TOKEN
+        sync: false
+      - key: SLACK_SIGNING_SECRET
+        sync: false
+      - key: SLACK_CLIENT_ID
+        sync: false
+      - key: SLACK_CLIENT_SECRET
+        sync: false
+      - key: SLACK_RECON_CHANNEL_ID
+        sync: false
+      - key: SLACK_EVIDENCE_CHANNEL_IDS
+        sync: false
+
+databases:
+  - name: reconiq-db
+    plan: free
+    region: virginia
+    databaseName: reconiq
+    user: reconiq
+    postgresMajorVersion: "15"

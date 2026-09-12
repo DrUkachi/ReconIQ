@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { backendHeaders } from "@/app/lib/backend-auth";
 import { BACKEND_API_BASE_URL, BACKEND_SESSION_COOKIE } from "@/app/lib/config";
 import { auth0 } from "@/lib/auth0";
 
@@ -9,21 +10,31 @@ function extractSessionCookie(header: string | null) {
   return match?.[1] ?? null;
 }
 
+// Same-site paths only, so ?returnTo= cannot bounce a signed-in user to another site.
+function safeReturnTo(value: string | null) {
+  return value && value.startsWith("/") && !value.startsWith("//") ? value : "/reconciliations";
+}
+
 export async function GET(request: Request) {
   const url = new URL(request.url);
-  const returnTo = url.searchParams.get("returnTo") || "/reconciliations";
+  const returnTo = safeReturnTo(url.searchParams.get("returnTo"));
   const authSession = await auth0.getSession();
 
   if (!authSession?.user?.email) {
     return NextResponse.redirect(new URL(`/auth/login?returnTo=${encodeURIComponent("/auth/complete")}`, url));
   }
 
+  // Workspaces are keyed by email domain, so an unverified address could join someone else's.
+  if (authSession.user.email_verified !== true) {
+    return NextResponse.redirect(new URL("/auth/verify-email", url));
+  }
+
   const response = await fetch(`${BACKEND_API_BASE_URL}/api/v1/session/login`, {
     method: "POST",
-    headers: {
+    headers: backendHeaders({
       "content-type": "application/json",
       accept: "application/json",
-    },
+    }),
     body: JSON.stringify({
       email: authSession.user.email,
       name: authSession.user.name ?? authSession.user.nickname ?? authSession.user.email,

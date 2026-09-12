@@ -51,12 +51,14 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
                   {session.user.role}
                 </p>
               </div>
-              <Link
+              {/* Plain anchor: <Link> prefetches visible links in production, and
+                  prefetching /logout signs the user out. */}
+              <a
                 href="/logout"
                 className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
               >
                 Sign out
-              </Link>
+              </a>
             </div>
           </div>
         </header>
