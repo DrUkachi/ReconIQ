@@ -1,0 +1,58 @@
+# PRD section 05: three services. No Redis, no Celery, no Kafka, no vector database.
+
+services:
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: bankrecon
+      POSTGRES_PASSWORD: bankrecon
+      POSTGRES_DB: bankrecon
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bankrecon -d bankrecon"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build: .
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://bankrecon:bankrecon@db:5432/bankrecon
+    ports:
+      - "8000:8000"
+    volumes:
+      - statements:/data/statements
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request;urllib.request.urlopen('http://localhost:8000/healthz')\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  worker:
+    build: .
+    command: python -m app.worker
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://bankrecon:bankrecon@db:5432/bankrecon
+    volumes:
+      - statements:/data/statements
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /tmp/worker-alive"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  pgdata:
+  statements:
