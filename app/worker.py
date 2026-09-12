@@ -118,7 +118,10 @@ async def main() -> None:
 
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGTERM, signal.SIGINT):
-        loop.add_signal_handler(sig, _shutdown.set)
+        try:
+            loop.add_signal_handler(sig, _shutdown.set)
+        except NotImplementedError:  # Windows event loops
+            signal.signal(sig, lambda *_: loop.call_soon_threadsafe(_shutdown.set))
 
     logger.info("worker_starting", extra={"component": "worker"})
     await asyncio.gather(worker_loop(), scheduler_loop(), outbox_loop())

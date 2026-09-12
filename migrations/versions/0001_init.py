@@ -35,7 +35,14 @@ $$;
 
 def upgrade() -> None:
     op.execute(ENSURE_ROLE)
-    op.execute(SQL_FILE.read_text())
+    sql = SQL_FILE.read_text(encoding="utf-8")
+    bind = op.get_bind()
+    if bind.dialect.driver == "asyncpg":
+        # asyncpg's prepared statements accept one command. Its raw execute uses
+        # the simple protocol for this trusted, parameter-free generated script.
+        bind.connection.dbapi_connection.run_async(lambda connection: connection.execute(sql))
+    else:
+        op.execute(sql)
 
 
 def downgrade() -> None:

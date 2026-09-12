@@ -6,6 +6,12 @@ of the finance team.
 
 Backend implementation of `BANKRECON_PRD_v2.md`. FastAPI + Postgres + Slack.
 
+Slack intake now supports original bank PDF/ledger CSV uploads in one thread,
+missing-input prompts, validation and recovery, separate currency runs, and durable
+result delivery. See [Slack setup and usage](docs/slack-intake.md). Live operation
+requires installed file scopes, channel membership, a verified HTTPS events URL,
+and running API/worker processes.
+
 ---
 
 ## The pattern
@@ -34,6 +40,69 @@ make demo-check           # verify everything is green
 ```
 
 API on `http://localhost:8000`, interactive docs at `/docs`.
+
+### Inspect signed PDF and CSV exports locally
+
+The five-column profile reads `Transaction Date`, `Transaction Reference`,
+`Amount`, `Currency`, and `Transaction Text` without changing the source files.
+It accepts ISO dates and signed amounts with two decimal places (positive means
+cash inflow). Currency must be NGN, USD, or EUR. References retain leading zeros.
+
+```bash
+python -m scripts.inspect_inputs --bank tests/fixtures/signed_exports/Bank_Statement_Demo.pdf --ledger tests/fixtures/signed_exports/General_Ledger_Demo.csv --period-start 2026-08-01 --period-end 2026-08-31 --validation-pdf tests/fixtures/signed_exports/Ingestion_Edge_Cases_Demo.pdf
+```
+
+The JSON report includes counts, per-currency totals, validation reasons, and raw
+source fields with file hashes and row locations. The optional validation PDF is
+reported separately. Invalid main-input rows block preparation for matching.
+Out-of-period and zero-value rows remain available but are excluded from matching
+inputs. Currency groups are separate, preserving the one-currency-per-run rule.
+
+This command validates ingestion only; it does not persist transactions, run
+matching, or send Slack messages. The existing debit/credit PDF parser remains a
+separate profile. The signed PDF reader requires selectable text and ruled tables
+with the five headers on each page; it does not perform OCR or verify balances.
+Stable source IDs support later import deduplication, but database idempotency is
+not implemented by this command. Group matching and the demo guide's other matching
+policy differences remain separate work.
+
+### Persist and reconcile signed exports
+
+With `DATABASE_URL` pointing to PostgreSQL, migrate and run:
+
+```bash
+python -m alembic upgrade head
+python -m scripts.reconcile_inputs --demo --account-last4 DEMO --bank tests/fixtures/signed_exports/Bank_Statement_Demo.pdf --ledger tests/fixtures/signed_exports/General_Ledger_Demo.csv --period-start 2026-08-01 --period-end 2026-08-31
+```
+
+`--demo` creates a synthetic local workspace and owner. `DEMO` is a placeholder
+account identifier, not a claim about an actual bank account. For an existing
+workspace, replace `--demo` with `--workspace-id UUID --actor-id UUID`; the service
+loads the actor's role from the database and requires import permissions.
+
+The command commits source snapshots, in-period transactions, matches, cases and
+audit events together. Separate currency runs share the original source hashes;
+each snapshot retains all raw rows, including excluded rows. Replaying the same
+files returns the existing runs. Replacing either source for the same account,
+period and currency is rejected. Concurrent runs are serialized with database
+row locks. The background `run_matching` handler also uses this persistence path.
+
+Matching uses the existing PRD engine (including its five-day date window), not
+the guide's alternative three-day/group-matching profile. Runs stop at
+`AWAITING_ACTION`; no approvals, ledger adjustments, or Slack messages are sent.
+Some residual rows remain unmatched without a case under the existing typing
+rules. Slack file intake, group matching, and the full demo guide remain unfinished.
+
+On the Windows workspace where the isolated runtime was provisioned, run
+`powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run_local_demo.ps1`.
+The execution policy applies only to that process. It starts the local database if needed and reruns
+the synthetic demo. Binaries, credentials and database files stay under ignored
+`.local/`; the server binds only to `127.0.0.1:55439`.
+
+Set `RECONIQ_TEST_DATABASE_URL` to a migrated, dedicated test database to include
+the PostgreSQL integration tests in `python -m pytest -q`. They cover atomic
+rollback, replay, concurrency, row reuse, permissions, and workspace isolation.
+Without that variable the integration tests are skipped.
 
 Without Docker:
 
@@ -257,8 +326,8 @@ the PRD would expect.
 | 9 | StandingCaseListener scoring, rate limits, suppression | Scoring done; Slack wiring pending |
 | 11 | Agent tool contracts + RBAC | Contracts done; orchestrator loop pending |
 | 14 | Audit events, `transition_case`, guard tables | Done |
-| 16 | Outbox, job leasing, error taxonomy | Leasing + taxonomy done; Slack post pending |
-| 1, 2 | Slack events, signing, dedupe, ACK | Signature verification done; event router pending |
+| 16 | Outbox, job leasing, error taxonomy | Durable Slack delivery, pacing, retries, leasing and taxonomy implemented |
+| 1, 2 | Slack events, signing, dedupe, ACK | Signed event routing and durable thread intake implemented |
 | 4 | Ledger CSV path | Fixture + schema done; loader pending |
 | 7, 8 | Case threads, evidence backfill | Schema + builders done; wiring pending |
 | 12, 13 | Block Kit approval, follow-up scheduler | Builders + scheduler skeleton done |

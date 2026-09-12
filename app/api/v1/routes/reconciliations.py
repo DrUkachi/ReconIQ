@@ -54,6 +54,7 @@ async def create_reconciliation(
                 Reconciliation.account_last4 == body.account_last4,
                 Reconciliation.period_start == body.period_start,
                 Reconciliation.period_end == body.period_end,
+                Reconciliation.currency == body.currency,
             )
         )
     ).scalar_one_or_none()
