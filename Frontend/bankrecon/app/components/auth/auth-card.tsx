@@ -17,14 +17,14 @@ export function AuthCard({ mode: initialMode = "login" }: { mode?: AuthMode }) {
             R
           </div>
           <div>
-            <p className="text-xs uppercase tracking-[0.24em] text-slate-300">ReconIQ</p>
+            <p className="text-xs uppercase tracking-[0.24em] text-slate-300">RekonIQ</p>
             <h1 className="text-2xl font-semibold">{isLogin ? "Welcome back" : "Create account"}</h1>
           </div>
         </div>
         <p className="text-sm text-slate-300">
           {isLogin
             ? "Sign in to continue reconciling your records."
-            : "Join ReconIQ and streamline your bank matching workflow."}
+            : "Join RekonIQ and streamline your bank matching workflow."}
         </p>
       </div>
 
