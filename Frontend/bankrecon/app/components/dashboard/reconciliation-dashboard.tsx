@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   auditTrail,
   exceptionQueue,
@@ -45,20 +46,109 @@ function RiskPill({ risk }: { risk: string }) {
 }
 
 export function ReconciliationDashboard() {
+  const router = useRouter();
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [activeTab, setActiveTab] = useState<TabKey>("Overview");
+  const [searchTerm, setSearchTerm] = useState("");
+  const [toast, setToast] = useState<string | null>(null);
+  const [uploadLabel, setUploadLabel] = useState("No file uploaded yet");
+  const [rows, setRows] = useState(reconciliationRows);
+  const [exceptions, setExceptions] = useState(exceptionQueue);
+  const [reason, setReason] = useState("Customer dispute note required");
+  const [notes, setNotes] = useState<Record<string, string>>({});
+
+  const filteredTransactions = transactionMatches.filter((tx) => {
+    const value = searchTerm.trim().toLowerCase();
+    if (!value) return true;
+    return (
+      tx.reference.toLowerCase().includes(value) ||
+      tx.customer.toLowerCase().includes(value) ||
+      tx.status.toLowerCase().includes(value)
+    );
+  });
+
+  const handleExportReport = () => {
+    const csvRows = [
+      ["id", "customer", "status", "amount", "updatedAt"],
+      ...rows.map((row) => [row.id, row.customer, row.status, row.totalValue.toString(), row.updatedAt]),
+    ];
+    const csv = csvRows.map((line) => line.join(",")).join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const link = document.createElement("a");
+    const url = URL.createObjectURL(blob);
+    link.href = url;
+    link.download = "rekoniq-report.csv";
+    link.click();
+    URL.revokeObjectURL(url);
+    setToast("Report exported successfully.");
+  };
+
+  const handleAddNote = (id: string) => {
+    const note = window.prompt(`Add note for ${id}`);
+    if (!note || !note.trim()) return;
+    setNotes((prev) => ({ ...prev, [id]: note.trim() }));
+    setToast(`Note added to ${id}.`);
+  };
+
+  const handleEscalate = (id: string) => {
+    setExceptions((prev) =>
+      prev.map((item) => (item.id === id ? { ...item, escalation: "Escalated" } : item)),
+    );
+    setToast(`${id} escalated successfully.`);
+  };
+
+  const handleResolve = (id: string) => {
+    setExceptions((prev) =>
+      prev.map((item) => (item.id === id ? { ...item, escalation: "Resolved", requiredReason: reason } : item)),
+    );
+    setToast(`${id} marked as resolved.`);
+  };
+
+  const handleValidateFiles = () => {
+    setToast("Uploaded files validated successfully.");
+    setUploadLabel("Validated and ready");
+  };
+
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setUploadLabel(`${file.name} selected`);
+    setToast(`${file.name} is ready for validation.`);
+  };
 
   return (
     <main className="space-y-6 p-4 md:p-6">
+      <input
+        ref={fileInputRef}
+        type="file"
+        className="hidden"
+        onChange={handleFileChange}
+      />
+
+      {toast ? (
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+          {toast}
+        </div>
+      ) : null}
+
       <header className="flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm md:flex-row md:items-center md:justify-between">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.22em] text-cyan-700">Reconciliations</p>
           <h1 className="mt-2 text-3xl font-bold text-slate-900">Home</h1>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <button className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
+          <button
+            type="button"
+            onClick={handleExportReport}
+            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+          >
             Export report
           </button>
-          <button className="rounded-xl bg-slate-900 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-800">
+          <button
+            type="button"
+            onClick={() => router.push("/reconciliations/new")}
+            className="rounded-xl bg-slate-900 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-800"
+          >
             New reconciliation
           </button>
         </div>
@@ -71,7 +161,12 @@ export function ReconciliationDashboard() {
           { label: "Exception queue", value: "24", change: "6 escalated", tone: "amber" },
           { label: "Avg. review SLA", value: "3.8h", change: "-0.7h", tone: "violet" },
         ].map((item) => (
-          <div key={item.label} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <button
+            key={item.label}
+            type="button"
+            onClick={() => setActiveTab(item.label.includes("Exception") ? "Exceptions" : item.label.includes("Auto") ? "Transactions" : "Overview")}
+            className="rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:border-cyan-200 hover:shadow-md"
+          >
             <p className="text-sm text-slate-500">{item.label}</p>
             <div className="mt-3 flex items-end justify-between gap-3">
               <span className="text-3xl font-bold text-slate-900">{item.value}</span>
@@ -83,7 +178,7 @@ export function ReconciliationDashboard() {
                 {item.change}
               </span>
             </div>
-          </div>
+          </button>
         ))}
       </section>
 
@@ -91,7 +186,9 @@ export function ReconciliationDashboard() {
         <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
           <div className="mb-4 flex items-center justify-between">
             <h2 className="text-lg font-semibold text-slate-900">Status overview</h2>
-            <button className="text-sm font-medium text-cyan-700">View all</button>
+            <button type="button" onClick={() => setActiveTab("Transactions")} className="text-sm font-medium text-cyan-700">
+              View all
+            </button>
           </div>
 
           <div className="overflow-x-auto">
@@ -107,7 +204,7 @@ export function ReconciliationDashboard() {
                 </tr>
               </thead>
               <tbody>
-                {reconciliationRows.map((row) => (
+                {rows.map((row) => (
                   <tr key={row.id} className="border-t border-slate-100">
                     <td className="py-3 pr-4">
                       <div>
@@ -141,9 +238,22 @@ export function ReconciliationDashboard() {
               </div>
             </div>
             <div className="mt-4 flex flex-wrap gap-2">
-              <button className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-700">Upload new</button>
-              <button className="rounded-xl bg-cyan-600 px-3 py-2 text-sm font-semibold text-white hover:bg-cyan-500">Validate files</button>
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
+              >
+                Upload new
+              </button>
+              <button
+                type="button"
+                onClick={handleValidateFiles}
+                className="rounded-xl bg-cyan-600 px-3 py-2 text-sm font-semibold text-white hover:bg-cyan-500"
+              >
+                Validate files
+              </button>
             </div>
+            <p className="mt-3 text-xs text-slate-500">{uploadLabel}</p>
           </div>
 
           <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -153,9 +263,15 @@ export function ReconciliationDashboard() {
                 <div key={setting.channel} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
                   <div className="flex items-center justify-between">
                     <span className="font-medium text-slate-800">{setting.channel}</span>
-                    <span className={`rounded-full px-2 py-1 text-xs font-medium ${setting.enabled ? "bg-emerald-50 text-emerald-700" : "bg-slate-200 text-slate-600"}`}>
+                    <button
+                      type="button"
+                      onClick={() => setToast(`${setting.channel} ${setting.enabled ? "disconnected" : "connected"}.`)}
+                      className={`rounded-full px-2 py-1 text-[10px] font-medium ${
+                        setting.enabled ? "bg-emerald-50 text-emerald-700" : "bg-slate-200 text-slate-600"
+                      }`}
+                    >
                       {setting.enabled ? "Connected" : "Disconnected"}
-                    </span>
+                    </button>
                   </div>
                   <ul className="mt-2 space-y-1 text-xs text-slate-600">
                     {setting.alerts.map((alert) => (
@@ -231,10 +347,18 @@ export function ReconciliationDashboard() {
                 <div className="flex items-center justify-between gap-3">
                   <input
                     type="text"
+                    value={searchTerm}
+                    onChange={(event) => setSearchTerm(event.target.value)}
                     placeholder="Search transaction or customer"
                     className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-800 outline-none focus:border-cyan-500 focus:bg-white"
                   />
-                  <button className="rounded-xl bg-slate-900 px-3 py-2.5 text-sm font-medium text-white">Filter</button>
+                  <button
+                    type="button"
+                    onClick={() => setToast(`Showing ${filteredTransactions.length} matching transactions.`)}
+                    className="rounded-xl bg-slate-900 px-3 py-2.5 text-sm font-medium text-white"
+                  >
+                    Filter
+                  </button>
                 </div>
 
                 <div className="overflow-x-auto">
@@ -250,7 +374,7 @@ export function ReconciliationDashboard() {
                       </tr>
                     </thead>
                     <tbody>
-                      {transactionMatches.map((tx) => (
+                      {filteredTransactions.map((tx) => (
                         <tr key={tx.id} className="border-t border-slate-100">
                           <td className="py-3 pr-4 font-medium text-slate-800">{tx.reference}</td>
                           <td className="py-3 pr-4">{tx.customer}</td>
@@ -275,7 +399,7 @@ export function ReconciliationDashboard() {
 
             {activeTab === "Exceptions" && (
               <div className="space-y-4">
-                {exceptionQueue.map((item) => (
+                {exceptions.map((item) => (
                   <div key={item.id} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
                     <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                       <div>
@@ -297,8 +421,25 @@ export function ReconciliationDashboard() {
                     <div className="mt-3 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                       <p className="text-sm text-slate-600">{currencyFormatter.format(item.amount)} • {item.requiredReason}</p>
                       <div className="flex gap-2">
-                        <button className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700">Add note</button>
-                        <button className="rounded-xl bg-amber-500 px-3 py-2 text-sm font-semibold text-white">Escalate</button>
+                        <button
+                          type="button"
+                          onClick={() => handleAddNote(item.id)}
+                          className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
+                        >
+                          Add note
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleEscalate(item.id)}
+                          className="rounded-xl bg-amber-500 px-3 py-2 text-sm font-semibold text-white hover:bg-amber-400"
+                        >
+                          Escalate
+                        </button>
+                        {notes[item.id] ? (
+                          <span className="rounded-xl bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-700">
+                            {notes[item.id]}
+                          </span>
+                        ) : null}
                       </div>
                     </div>
                   </div>
@@ -331,7 +472,7 @@ export function ReconciliationDashboard() {
           <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
             <h2 className="text-lg font-semibold text-slate-900">Exception queue</h2>
             <div className="mt-4 space-y-3">
-              {exceptionQueue.slice(0, 3).map((item) => (
+              {exceptions.slice(0, 3).map((item) => (
                 <div key={item.id} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
                   <div className="flex items-center justify-between">
                     <span className="font-medium text-slate-800">{item.id}</span>
@@ -350,12 +491,20 @@ export function ReconciliationDashboard() {
             <h2 className="text-lg font-semibold text-slate-900">Required resolution</h2>
             <div className="mt-4 space-y-3">
               <label className="block text-sm font-medium text-slate-700">Reason category</label>
-              <select className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-800 outline-none focus:border-cyan-500 focus:bg-white">
+              <select
+                value={reason}
+                onChange={(event) => setReason(event.target.value)}
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-800 outline-none focus:border-cyan-500 focus:bg-white"
+              >
                 <option>Customer dispute note required</option>
                 <option>Finance approval required</option>
                 <option>Duplicate receipt investigation</option>
               </select>
-              <button className="w-full rounded-xl bg-cyan-600 px-3 py-2.5 text-sm font-semibold text-white hover:bg-cyan-500">
+              <button
+                type="button"
+                onClick={() => handleResolve(exceptions[0]?.id ?? "EX-445")}
+                className="w-full rounded-xl bg-cyan-600 px-3 py-2.5 text-sm font-semibold text-white hover:bg-cyan-500"
+              >
                 Resolve exception
               </button>
             </div>
