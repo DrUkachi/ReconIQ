@@ -5,7 +5,7 @@ import httpx
 import pytest
 from sqlalchemy import select, func
 
-from app.core.config import get_settings
+from app.core.config import Settings, get_settings
 from app.core.logging import redact
 from app.models.infra import SlackOutbox
 from app.models.slack_chat import SlackChatTurn
@@ -94,6 +94,10 @@ def test_openrouter_key_redaction():
     assert "sk-or-v1-abcd1234secret" not in redact("Bearer sk-or-v1-abcd1234secret")
 
 
+def test_provider_defaults_to_the_documented_openrouter_integration():
+    assert Settings(_env_file=None).llm_provider == "openrouter"
+
+
 @pytest.mark.parametrize("text,kind", [("<@U_BOT> hello", "agent_turn"), ("<@U_BOT> What is reconciliation?", "agent_turn"), ("<@U_BOT> reconcile August 2026 account DEMO", "slack_intake")])
 def test_mentions_route_chat_or_intake(text,kind):
     for event_type in ["app_mention","message"]:
@@ -166,6 +170,21 @@ async def test_chat_failure_posts_safe_fallback_once(intake_db):
         post=await session.scalar(select(SlackOutbox).where(SlackOutbox.workspace_id == workspace.id))
         assert "try your question again" in post.fallback_text
     assert len(ai.calls) == 1
+
+
+@db_test
+@pytest.mark.asyncio
+async def test_wrong_provider_does_not_claim_the_key_is_missing(intake_db,monkeypatch):
+    factory,workspace,_=intake_db
+    monkeypatch.setattr(get_settings(),"llm_provider","anthropic")
+    monkeypatch.setattr(get_settings(),"openrouter_api_key","saved-test-key")
+    ai=FakeAI()
+    await handle_chat(event(workspace,"hello"),sessionmaker=factory,client=ai)
+    async with factory() as session:
+        post=await session.scalar(select(SlackOutbox).where(SlackOutbox.workspace_id == workspace.id))
+        assert "wrong provider setting" in post.fallback_text
+        assert "save the OpenRouter key" not in post.fallback_text
+    assert not ai.calls
 
 
 @db_test

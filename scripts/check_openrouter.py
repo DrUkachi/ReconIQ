@@ -4,6 +4,9 @@ from app.services.llm.openrouter import OpenRouterClient, OpenRouterUnavailable
 
 
 def main():
+    if get_settings().llm_provider != "openrouter":
+        print("OpenRouter check failed: LLM_PROVIDER must be openrouter for Slack AI chat.")
+        return 1
     client = OpenRouterClient()
     messages = [{"role": "user", "content": "How many r letters are in the word strawberry? Reply briefly."}]
     try:
