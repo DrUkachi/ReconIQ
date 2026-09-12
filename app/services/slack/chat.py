@@ -98,8 +98,10 @@ async def handle_chat(job, *, sessionmaker=None, client=None):
             answer = {"role": "assistant", "content": "I couldn’t reach the AI service. Please try your question again. Reconciliation intake commands still work."}
             if error == "message_too_long":
                 answer["content"] = "Please shorten your question to 8,000 characters or fewer."
-            elif error in {"openrouter_key_missing", "openrouter_not_selected"}:
+            elif error == "openrouter_key_missing":
                 answer["content"] = "AI chat is not configured yet. The app owner needs to save the OpenRouter key and restart the worker. Reconciliation intake commands still work."
+            elif error == "openrouter_not_selected":
+                answer["content"] = "AI chat is using the wrong provider setting. The app owner needs to select OpenRouter and restart the worker. Reconciliation intake commands still work."
         turn = SlackChatTurn(workspace_id=workspace.id, channel_id=channel, thread_ts=thread,
             message_ts=message_ts, actor_slack_id=user, user_text=user_text[:8000],
             assistant_message=answer, model=settings.openrouter_model, error_code=error)

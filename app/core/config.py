@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     web_app_url: str = ""
 
     anthropic_api_key: str = ""
-    llm_provider: Literal["anthropic", "openrouter"] = "anthropic"
+    llm_provider: Literal["anthropic", "openrouter"] = "openrouter"
     openrouter_api_key: str = ""
     openrouter_api_url: str = "https://openrouter.ai/api/v1/chat/completions"
     openrouter_model: str = "openai/gpt-5.6-luna"

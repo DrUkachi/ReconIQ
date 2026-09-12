@@ -1,5 +1,21 @@
 # Handoff log
 
+## Update: provider selection correction, 2026-09-12
+
+Slack delivery is now confirmed: real mention events reached the worker and its
+fallback message was sent successfully. The saved key was present, but effective
+LLM_PROVIDER had reverted to the Anthropic default; the stored chat error was
+`openrouter_not_selected`. Restored explicit OpenRouter settings in ignored `.env`,
+changed the application default to OpenRouter, and separated wrong-provider and
+missing-key fallback messages. The provider check now also refuses a mismatched
+LLM_PROVIDER, instead of testing the transport alone.
+
+Verification: 410 tests passed, including regression checks for the default and
+accurate configuration error. Restarted the verified idle worker and confirmed
+both live OpenRouter requests returned responses. A fresh Slack message is needed
+to verify the new AI reply; the previous fallback delivery remains idempotently
+complete. Existing gateway and tunnel were left running.
+
 ## Update: OpenRouter conversational replies, 2026-09-12
 
 Configured provider `openrouter`, endpoint `/api/v1/chat/completions` on
