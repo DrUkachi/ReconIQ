@@ -54,8 +54,13 @@ def test_metrics_endpoint_is_exposed():
 def test_openapi_documents_the_full_section_12_surface():
     paths = client.get("/openapi.json").json()["paths"]
     expected = {
+        "/api/v1/session",
+        "/api/v1/session/login",
+        "/api/v1/session/logout",
         "/api/v1/reconciliations",
+        "/api/v1/reconciliations/import",
         "/api/v1/reconciliations/{reconciliation_id}",
+        "/api/v1/reconciliations/{reconciliation_id}/audit",
         "/api/v1/reconciliations/{reconciliation_id}/transactions",
         "/api/v1/reconciliations/{reconciliation_id}/audit.csv",
         "/api/v1/transactions/{transaction_id}",

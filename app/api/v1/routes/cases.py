@@ -42,6 +42,7 @@ async def list_cases(
     page: PageDep,
     state: str | None = None,
     assignee: uuid.UUID | None = None,
+    reconciliation_id: uuid.UUID | None = None,
 ) -> CasePage:
     statement = select(ExceptionCase).where(
         ExceptionCase.workspace_id == principal.workspace_id
@@ -50,6 +51,8 @@ async def list_cases(
         statement = statement.where(ExceptionCase.state == state)
     if assignee:
         statement = statement.where(ExceptionCase.assignee_id == assignee)
+    if reconciliation_id:
+        statement = statement.where(ExceptionCase.reconciliation_id == reconciliation_id)
 
     rows = list(
         (

@@ -61,6 +61,19 @@ class ReconciliationDetail(ReconciliationSummary):
     completion_blockers: list[str] = Field(default_factory=list)
 
 
+class AuditEventOut(BaseModel):
+    id: uuid.UUID
+    action: str
+    actor_user_id: uuid.UUID | None = None
+    actor_slack_id: str | None = None
+    case_id: uuid.UUID | None = None
+    from_state: str | None = None
+    to_state: str | None = None
+    reason: str | None = None
+    detail: dict = Field(default_factory=dict)
+    created_at: datetime
+
+
 class ScoreComponents(BaseModel):
     amount: int
     reference: int
@@ -221,3 +234,31 @@ class SettingsUpdate(BaseModel):
 class RoleUpdate(BaseModel):
     slack_user_id: str
     role: Role
+
+
+class SessionLogin(BaseModel):
+    email: str = Field(min_length=3, max_length=255)
+    name: str | None = Field(default=None, max_length=255)
+    workspace_name: str | None = Field(default=None, max_length=255)
+
+
+class SessionUserOut(BaseModel):
+    id: uuid.UUID
+    display_name: str
+    email_masked: str | None = None
+    role: Role
+    slack_user_id: str
+
+
+class WorkspaceOut(BaseModel):
+    id: uuid.UUID
+    name: str
+
+
+class SessionOut(BaseModel):
+    user: SessionUserOut
+    workspace: WorkspaceOut
+
+
+class LogoutOut(BaseModel):
+    ok: bool = True

@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from pathlib import Path
 import signal
 
 from app.core.config import get_settings
@@ -16,8 +17,14 @@ logger = logging.getLogger(__name__)
 
 POLL_INTERVAL_SECONDS = 1.0
 SCHEDULER_TICK_SECONDS = 30.0
+HEARTBEAT_PATH = Path("/tmp/worker-alive")
 
 _shutdown = asyncio.Event()
+
+
+def write_heartbeat() -> None:
+    """Keep Docker's worker healthcheck aligned with the process being alive."""
+    HEARTBEAT_PATH.touch()
 
 
 async def handle(job) -> None:
@@ -79,6 +86,7 @@ async def worker_loop() -> None:
         except Exception:
             logger.exception("worker_loop_error", extra={"component": "worker"})
             busy = False
+        write_heartbeat()
         if not busy:
             await asyncio.sleep(POLL_INTERVAL_SECONDS)
 
@@ -95,6 +103,7 @@ async def scheduler_loop() -> None:
                 await session.commit()
         except Exception:
             logger.exception("scheduler_error", extra={"component": "scheduler"})
+        write_heartbeat()
         await asyncio.sleep(SCHEDULER_TICK_SECONDS)
 
 
@@ -109,6 +118,7 @@ async def outbox_loop() -> None:
                 await session.commit()
         except Exception:
             logger.exception("outbox_error", extra={"component": "outbox"})
+        write_heartbeat()
         await asyncio.sleep(1.0)
 
 
@@ -124,6 +134,7 @@ async def main() -> None:
             signal.signal(sig, lambda *_: loop.call_soon_threadsafe(_shutdown.set))
 
     logger.info("worker_starting", extra={"component": "worker"})
+    write_heartbeat()
     await asyncio.gather(worker_loop(), scheduler_loop(), outbox_loop())
     logger.info("worker_stopped", extra={"component": "worker"})
 

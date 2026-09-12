@@ -1,13 +1,25 @@
-import { redirect } from "next/navigation";
 import { ReconciliationDashboard } from "@/app/components/dashboard/reconciliation-dashboard";
-import { auth0 } from "@/lib/auth0";
+import {
+  getCases,
+  getReconciliations,
+  getSettings,
+  requireSession,
+} from "@/app/lib/server-api";
 
 export default async function ReconciliationsPage() {
-  const session = await auth0.getSession();
+  const session = await requireSession();
+  const [reconciliations, casePage, settings] = await Promise.all([
+    getReconciliations(),
+    getCases(),
+    getSettings(),
+  ]);
 
-  if (!session) {
-    redirect("/auth/login");
-  }
-
-  return <ReconciliationDashboard />;
+  return (
+    <ReconciliationDashboard
+      session={session}
+      reconciliations={reconciliations}
+      cases={casePage.items}
+      settings={settings}
+    />
+  );
 }

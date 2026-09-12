@@ -1,6 +1,6 @@
 import uuid
 
-from fastapi import APIRouter
+from fastapi import APIRouter, File, Form, UploadFile
 from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select
 
@@ -8,20 +8,22 @@ from app.api.deps import IdempotencyDep, PageDep, PrincipalDep, SessionDep, requ
 from app.core.errors import BankReconError, ErrorCode
 from app.core.rbac import Action
 from app.domain.enums import CaseState, MatchState, TransactionStatus
-from app.models.base import utcnow
 from app.models.cases import ExceptionCase
 from app.models.core import BankTransaction, Reconciliation, Statement, TransactionMatch
+from app.models.infra import AuditEvent
 from app.schemas.api import (
+    AuditEventOut,
     CreateReconciliation,
-    Money,
     ReconciliationDetail,
     ReconciliationSummary,
     StatementProvenance,
-    TransactionOut,
     TransactionPage,
 )
 from app.services import audit
 from app.services.api_mapping import money, transaction_out
+from app.services.ingestion.files import parse_ledger_csv, parse_signed_pdf
+from app.services.ingestion.persistence import import_signed_sources
+from app.services.matching.persistence import match_reconciliation
 
 router = APIRouter(prefix="/reconciliations", tags=["reconciliations"])
 
@@ -83,6 +85,67 @@ async def create_reconciliation(
     )
     await session.commit()
     return await _summarise(session, reconciliation)
+
+
+@router.post("/import", response_model=list[ReconciliationSummary], status_code=201)
+async def import_reconciliation(
+    session: SessionDep,
+    idempotency: IdempotencyDep,
+    principal=requires(Action.UPLOAD_STATEMENT),
+    account_last4: str = Form(...),
+    period_start: str = Form(...),
+    period_end: str = Form(...),
+    bank_file: UploadFile = File(...),
+    ledger_file: UploadFile = File(...),
+) -> list[ReconciliationSummary]:
+    from datetime import date
+
+    try:
+        start = date.fromisoformat(period_start)
+        end = date.fromisoformat(period_end)
+    except ValueError as exc:
+        raise BankReconError(
+            ErrorCode.E_VALIDATION,
+            detail="Use ISO dates for the reconciliation period.",
+        ) from exc
+
+    bank = parse_signed_pdf(
+        await bank_file.read(),
+        bank_file.filename or "statement.pdf",
+    )
+    ledger = parse_ledger_csv(
+        await ledger_file.read(),
+        ledger_file.filename or "ledger.csv",
+    )
+
+    ids = await import_signed_sources(
+        session,
+        workspace_id=principal.workspace_id,
+        actor_user_id=principal.user_id,
+        account_last4=account_last4,
+        start=start,
+        end=end,
+        bank=bank,
+        ledger=ledger,
+    )
+    reconciliations: list[ReconciliationSummary] = []
+    for reconciliation_id in ids:
+        await match_reconciliation(
+            session,
+            reconciliation_id=reconciliation_id,
+            workspace_id=principal.workspace_id,
+        )
+        reconciliation = await _load(session, reconciliation_id, principal.workspace_id)
+        reconciliations.append(await _summarise(session, reconciliation))
+    await audit.record(
+        session,
+        workspace_id=principal.workspace_id,
+        actor_user_id=principal.user_id,
+        action="WEB_IMPORT_COMPLETED",
+        detail={"reconciliation_ids": [str(r.id) for r in reconciliations], "idempotency_key": idempotency},
+    )
+    await session.commit()
+    return reconciliations
 
 
 @router.get("/{reconciliation_id}", response_model=ReconciliationDetail)
@@ -159,6 +222,43 @@ async def list_transactions(
             "has_more": has_more,
         },
     )
+
+
+@router.get("/{reconciliation_id}/audit", response_model=list[AuditEventOut])
+async def list_audit_events(
+    reconciliation_id: uuid.UUID,
+    session: SessionDep,
+    principal: PrincipalDep,
+) -> list[AuditEventOut]:
+    await _load(session, reconciliation_id, principal.workspace_id)
+    rows = list(
+        (
+            await session.execute(
+                select(AuditEvent)
+                .where(
+                    AuditEvent.workspace_id == principal.workspace_id,
+                    AuditEvent.reconciliation_id == reconciliation_id,
+                )
+                .order_by(AuditEvent.created_at.desc())
+                .limit(200)
+            )
+        ).scalars()
+    )
+    return [
+        AuditEventOut(
+            id=row.id,
+            action=row.action,
+            actor_user_id=row.actor_user_id,
+            actor_slack_id=row.actor_slack_id,
+            case_id=row.case_id,
+            from_state=row.from_state,
+            to_state=row.to_state,
+            reason=row.reason,
+            detail=dict(row.detail or {}),
+            created_at=row.created_at,
+        )
+        for row in rows
+    ]
 
 
 @router.get("/{reconciliation_id}/audit.csv")

@@ -46,6 +46,32 @@ make demo-check           # verify everything is green
 
 API on `http://localhost:8000`, interactive docs at `/docs`.
 
+### Run the integrated web app locally
+
+The Next.js frontend now talks to the FastAPI backend through local route handlers,
+so the simplest setup is:
+
+```bash
+cp .env.example .env
+make up
+```
+
+Then, in a second terminal:
+
+```bash
+cd Frontend/bankrecon
+cp .env.local.example .env.local
+npm install
+npm run dev
+```
+
+Open `http://localhost:3000` for the web app and sign in with a work email. The
+frontend creates or reuses a backend session-backed workspace identity locally.
+
+For now, your backend can stay on your local computer. Later, if you deploy only
+the frontend to Vercel, `BACKEND_API_BASE_URL` must point to a publicly reachable
+HTTPS backend URL; a Vercel-hosted app cannot call `127.0.0.1` on your machine.
+
 ### Inspect signed PDF and CSV exports locally
 
 The five-column profile reads `Transaction Date`, `Transaction Reference`,
