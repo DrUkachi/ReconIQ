@@ -20,13 +20,17 @@ depends_on = None
 SQL_FILE = pathlib.Path(__file__).resolve().parent.parent / "0001_init.sql"
 
 # The REVOKE in 0001_init.sql targets the bankrecon_app role. Create it first so a
-# fresh database migrates cleanly; in production the role already exists and this
-# is a no-op.
+# fresh database migrates cleanly. Managed Postgres (e.g. Render) may refuse CREATE
+# ROLE; the migration then continues and the guarded REVOKE is skipped.
 ENSURE_ROLE = """
 DO $$
 BEGIN
     IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'bankrecon_app') THEN
-        CREATE ROLE bankrecon_app NOLOGIN;
+        BEGIN
+            CREATE ROLE bankrecon_app NOLOGIN;
+        EXCEPTION WHEN insufficient_privilege THEN
+            RAISE NOTICE 'bankrecon_app not created (insufficient privilege); audit REVOKE skipped';
+        END;
     END IF;
 END
 $$;

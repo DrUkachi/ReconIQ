@@ -79,6 +79,14 @@ async def work_once() -> bool:
     return True
 
 
+async def _pause(seconds: float) -> None:
+    """Sleep, but return as soon as shutdown begins so SIGTERM is honoured within the host's grace period."""
+    try:
+        await asyncio.wait_for(_shutdown.wait(), timeout=seconds)
+    except TimeoutError:
+        pass
+
+
 async def worker_loop() -> None:
     while not _shutdown.is_set():
         try:
@@ -88,7 +96,7 @@ async def worker_loop() -> None:
             busy = False
         write_heartbeat()
         if not busy:
-            await asyncio.sleep(POLL_INTERVAL_SECONDS)
+            await _pause(POLL_INTERVAL_SECONDS)
 
 
 async def scheduler_loop() -> None:
@@ -104,7 +112,7 @@ async def scheduler_loop() -> None:
         except Exception:
             logger.exception("scheduler_error", extra={"component": "scheduler"})
         write_heartbeat()
-        await asyncio.sleep(SCHEDULER_TICK_SECONDS)
+        await _pause(SCHEDULER_TICK_SECONDS)
 
 
 async def outbox_loop() -> None:
@@ -119,7 +127,7 @@ async def outbox_loop() -> None:
         except Exception:
             logger.exception("outbox_error", extra={"component": "outbox"})
         write_heartbeat()
-        await asyncio.sleep(1.0)
+        await _pause(1.0)
 
 
 async def main() -> None:

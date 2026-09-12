@@ -1,10 +1,11 @@
 import logging
 import time
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.responses import JSONResponse, PlainTextResponse
 from starlette.middleware.sessions import SessionMiddleware
 
+from app.api.internal_auth import require_internal_token
 from app.api.slack import router as slack_router
 from app.api.v1.router import api_router
 from app.core.config import get_settings
@@ -60,7 +61,11 @@ async def bankrecon_error_handler(request: Request, exc: BankReconError) -> JSON
     )
 
 
-app.include_router(api_router, prefix=settings.api_v1_prefix)
+app.include_router(
+    api_router,
+    prefix=settings.api_v1_prefix,
+    dependencies=[Depends(require_internal_token)],
+)
 
 # Slack posts to fixed URLs configured in the app manifest, so these sit at the
 # root rather than under the versioned API prefix.

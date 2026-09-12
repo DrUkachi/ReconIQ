@@ -17,4 +17,6 @@ COPY . .
 RUN mkdir -p /data/statements
 
 EXPOSE 8000
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Hosts such as Render assign the port through $PORT; exec keeps uvicorn as PID 1 so
+# SIGTERM reaches it. Docker Compose overrides this command with an explicit port.
+CMD ["sh", "-c", "exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]

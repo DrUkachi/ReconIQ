@@ -1,10 +1,17 @@
 import pytest
 from fastapi.testclient import TestClient
 
+from app.api.internal_auth import INTERNAL_TOKEN_HEADER
+from app.core.config import get_settings
 from app.core.errors import ERROR_SPECS, ErrorCode
 from app.main import app
 
-client = TestClient(app, raise_server_exceptions=False)
+# The web app's server always sends the token; tests/test_internal_token.py covers its absence.
+client = TestClient(
+    app,
+    raise_server_exceptions=False,
+    headers={INTERNAL_TOKEN_HEADER: get_settings().internal_api_token},
+)
 
 
 def test_healthz_never_touches_the_database():

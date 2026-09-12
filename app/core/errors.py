@@ -42,6 +42,7 @@ class ErrorCode(StrEnum):
     E_USER_NOT_FOUND = "E_USER_NOT_FOUND"
     E_TOO_BROAD = "E_TOO_BROAD"
     E_VALIDATION = "E_VALIDATION"
+    E_INTERNAL_AUTH = "E_INTERNAL_AUTH"
 
 
 @dataclass(frozen=True)
@@ -140,6 +141,9 @@ ERROR_SPECS: dict[ErrorCode, ErrorSpec] = {
         422, "That search returns {n} rows. Narrow it and I will show you the detail."
     ),
     ErrorCode.E_VALIDATION: ErrorSpec(422, "{detail}"),
+    ErrorCode.E_INTERNAL_AUTH: ErrorSpec(
+        401, "This API only accepts requests from the RekonIQ web app."
+    ),
 }
 
 

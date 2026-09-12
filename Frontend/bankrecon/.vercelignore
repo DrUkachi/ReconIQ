@@ -1,0 +1,5 @@
+# Local secrets never ship; production values live in the Vercel project settings.
+.env*
+node_modules
+.next
+.vercel

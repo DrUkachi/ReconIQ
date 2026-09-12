@@ -1,6 +1,7 @@
 from functools import lru_cache
 from typing import Literal
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -11,6 +12,16 @@ class Settings(BaseSettings):
 
     database_url: str = "postgresql+asyncpg://bankrecon:bankrecon@localhost:5432/bankrecon"
 
+    @field_validator("database_url")
+    @classmethod
+    def use_async_driver(cls, value: str) -> str:
+        # Hosted Postgres (Render and similar) issues postgres:// or postgresql:// URLs,
+        # but the engine and Alembic both run on asyncpg.
+        for prefix in ("postgres://", "postgresql://"):
+            if value.startswith(prefix):
+                return "postgresql+asyncpg://" + value[len(prefix):]
+        return value
+
     slack_bot_token: str = ""
     slack_signing_secret: str = ""
     slack_app_token: str = ""
@@ -19,6 +30,8 @@ class Settings(BaseSettings):
     slack_recon_channel_id: str = ""
     slack_evidence_channel_ids: str = ""
     web_app_url: str = ""
+    # Shared secret the web app's server sends on every /api/v1 call; empty refuses all calls.
+    internal_api_token: str = ""
 
     anthropic_api_key: str = ""
     llm_provider: Literal["anthropic", "openrouter"] = "openrouter"

@@ -20,7 +20,14 @@ CREATE EXTENSION IF NOT EXISTS pg_trgm;
 """
 
 FOOTER = """-- PRD section 11: audit is append only, enforced by the database, not by code.
-REVOKE UPDATE, DELETE ON audit_event FROM bankrecon_app;
+-- Skipped where managed Postgres refused to create the role (see migration 0001).
+DO $$
+BEGIN
+    IF EXISTS (SELECT FROM pg_roles WHERE rolname = 'bankrecon_app') THEN
+        REVOKE UPDATE, DELETE ON audit_event FROM bankrecon_app;
+    END IF;
+END
+$$;
 
 -- Trigram index backing counterparty recall in the evidence search (PRD 6.4).
 -- array_to_string(anyarray, text) is STABLE because some element types depend on

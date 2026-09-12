@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 
 import { auth0 } from "@/lib/auth0";
 
+import { backendHeaders } from "./backend-auth";
 import { BACKEND_API_BASE_URL, BACKEND_SESSION_COOKIE } from "./config";
 import type {
   AuditEventOut,
@@ -24,7 +25,7 @@ async function backendRequest<T>(
 ): Promise<T> {
   const cookieStore = await cookies();
   const backendSession = cookieStore.get(BACKEND_SESSION_COOKIE)?.value;
-  const headers = new Headers(init?.headers);
+  const headers = backendHeaders(init?.headers);
 
   if (backendSession) {
     headers.set("cookie", `session=${backendSession}`);

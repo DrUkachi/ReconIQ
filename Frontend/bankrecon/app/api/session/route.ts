@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
+import { backendHeaders } from "@/app/lib/backend-auth";
 import { BACKEND_API_BASE_URL, BACKEND_SESSION_COOKIE } from "@/app/lib/config";
 
 export async function GET() {
@@ -15,10 +16,10 @@ export async function GET() {
   }
 
   const response = await fetch(`${BACKEND_API_BASE_URL}/api/v1/session`, {
-    headers: {
+    headers: backendHeaders({
       accept: "application/json",
       cookie: `session=${backendSession}`,
-    },
+    }),
     cache: "no-store",
   });
 

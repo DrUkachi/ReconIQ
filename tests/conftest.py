@@ -1,9 +1,13 @@
 import json
+import os
 from datetime import date, datetime, timezone
 
 import pytest
 
-from app.domain.enums import Direction
+# Deterministic token for API tests; set before any module caches settings.
+os.environ.setdefault("INTERNAL_API_TOKEN", "test-internal-token")
+
+from app.domain.enums import Direction  # noqa: E402
 from app.domain.records import BankTxn, MatchingResult, PaymentRecord
 
 
