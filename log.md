@@ -1,0 +1,262 @@
+# Handoff log
+
+**For:** an AI coding agent (Codex, Claude, or similar) picking this repo up cold.
+**Spec:** `BANKRECON_PRD_v2.md` — ask the repo owner for it if it is not in the tree.
+**Last updated:** after the Slack event router landed.
+
+Read this file, then `README.md`. Between them you should not need to re-derive
+anything. Everything below is fact about the current tree, not plan.
+
+---
+
+## 1. What this is
+
+BankRecon reconciles a bank statement (PDF) against internal payment records (CSV),
+groups what it cannot resolve into owned cases, and then closes those cases from the
+ambient conversation of a finance team in Slack.
+
+The distinctive part — and the thing not to break — is the **StandingCaseListener**:
+open cases register standing intents, and every new workspace message is scored
+against them. When a colleague mentions an invoice number in a channel, addressed to
+nobody, the agent connects it to an open case unprompted.
+
+Three data sources, and only two are trusted. Workspace claims from Slack are
+**evidence only** and can never close a case without human approval. This is enforced
+architecturally, not by policy — see §4.
+
+---
+
+## 2. Current state
+
+```bash
+pip install -r requirements.txt
+python -m pytest -q        # 312 passed, ~1.5s, no database or network needed
+```
+
+**Complete and tested:** the deterministic core (extraction parsing, matching,
+exception typing, listener scoring), the safety architecture, 23 database tables with
+DB-enforced invariants, the REST contract (17 endpoints), and the Slack event router.
+
+**Not yet wired:** the I/O edges. Every one is marked with `NotImplementedError` and
+a one-line note saying exactly what to connect. `grep -rn NotImplementedError app/`
+is your to-do list. See §6.
+
+There is no live Postgres or Slack app in this environment. Nothing has been run
+end to end against real infrastructure. Treat "tests pass" as "the logic is correct",
+not "the system has been demonstrated".
+
+---
+
+## 3. Where things live
+
+```
+app/
+  domain/       PURE value objects and logic. No I/O, no DB, no network, no LLM.
+                money.py dates.py text.py records.py enums.py
+  core/         config, errors (the taxonomy), rbac, logging, correlation, db
+  models/       SQLAlchemy tables. Source of truth for the schema.
+  services/
+    extraction/ validate -> columns -> parser (pure) ; service.py does the PDF I/O
+    matching/   scoring.py (components) + engine.py (passes). PURE.
+    exceptions/ engine.py typing rules + grouping. PURE.
+    evidence/   extract.py regex signal extraction. PURE.
+    listener/   scoring.py (PURE) + cache.py (in-memory open-case key set)
+    cases/      guards.py (PURE transition tables) + transitions.py (the chokepoint)
+    jobs/       queue.py (leasing) handlers.py (registry) scheduler.py
+    outbox/     dispatcher.py durable outbound Slack
+    llm/        client.py (5 call sites) schemas.py budget.py
+    slack/      verify.py (signatures) events.py (routing, PURE) blocks.py (Block Kit)
+    agent/      tools.py the 14 tool contracts
+  api/          deps.py (auth/idempotency) v1/routes/*.py slack.py
+migrations/     0001_init.sql is GENERATED from app/models — see §5
+```
+
+**The split that matters:** anything marked PURE above takes value objects and
+returns value objects. That is why 312 tests run in 1.5 seconds with no
+infrastructure, and it is why the determinism gate is meaningful. Do not introduce a
+database session, an HTTP client, or a model call into any of those modules. Put the
+I/O in a caller and pass the results in.
+
+---
+
+## 4. Invariants — break these and the product's claims stop being true
+
+These each have a test. The test names are given so you can find them.
+
+**4.1 The deterministic core makes zero model calls.**
+Matching, extraction parsing, exception typing and listener scoring never call an
+LLM. `test_matching_is_deterministic_across_input_order` shuffles inputs 100 times
+and asserts byte-identical output. If you add a model call to those paths, that gate
+becomes a lie.
+
+**4.2 Rule S1 — `transition_case` is the only writer of `case.state`.**
+`app/services/cases/transitions.py` locks the row, checks the guard table, writes the
+audit event, and invalidates the listener cache. `test_no_module_assigns_case_state_directly`
+greps the whole `app/` tree to enforce this. It is verified non-vacuous: injecting
+`case.state = 'CLOSED'` elsewhere makes it fail.
+
+**4.3 Rule T1 — the model cannot reach the approval path.**
+`apply_resolution`, `escalate_case` and `decide_match` have `autonomy=CONFIRM` and are
+**absent from `model_tool_definitions()` entirely**. The model may only call the
+`propose_*` variants. The apply path is reachable only from a verified Slack
+interaction payload whose user id passes an RBAC check in code.
+Tests: `TestRuleT1` in `tests/test_security.py`.
+
+**4.4 The model can never claim an identity.**
+No model-exposed tool accepts `actor_user_id`, `actor_slack_id`, `role`, or
+`workspace_id`. Identity comes from the invocation context.
+Test: `test_the_model_cannot_claim_an_identity_through_any_tool_argument`.
+
+**4.5 Money is integer minor units, end to end.**
+`Decimal` for parsing, never `float`. Direction comes from the debit/credit column,
+never from the narration or the sign. Across the API money is always
+`{minor, currency, display}`.
+
+**4.6 RBAC is enforced in code at every call site, never in a prompt.**
+The model never sees the authorisation decision. `app/core/rbac.py`, exhaustively
+tested over action × role.
+
+**4.7 Every failure is a taxonomy code.**
+`app/core/errors.py`. Raise `BankReconError(ErrorCode.X, **params)`. Never raise a
+bare exception to a user-facing path. Every 4xx returns `{code, message, details,
+correlation_id}`.
+
+**4.8 Side effects are ordered: commit first, then external calls.**
+Outbox rows are written inside the caller's transaction. There is no code path that
+calls Slack before committing.
+
+---
+
+## 5. Conventions you must follow
+
+**Schema changes.** `app/models/` is the source of truth. After changing a model run
+`python scripts/generate_ddl.py`, which regenerates `migrations/0001_init.sql`. The
+Alembic revision executes that SQL file, so the two cannot drift. Do not hand-edit
+`0001_init.sql`.
+
+**Anthropic API — two things your training data probably has wrong:**
+
+- **Do not send `temperature`** (or `top_p`/`top_k`). Sampling parameters were
+  removed on the current model generation; sending one returns HTTP 400. The PRD's
+  §08 guardrail 1 says "temperature 0 everywhere" and is **not implementable**.
+  Output stability comes from `output_config: {"format": {"type": "json_schema",
+  "schema": ...}}` with `additionalProperties: false`. `test_temperature_is_never_sent_because_the_api_rejects_it`
+  guards this.
+- **Model is `claude-sonnet-5`**, not the `claude-sonnet-4-6` in PRD §18. Same tier,
+  current generation, cheaper and stronger. Configurable via `ANTHROPIC_MODEL`.
+- Tools use `strict: True` with closed schemas. Thinking stays on with
+  `output_config: {"effort": "low"}` rather than being disabled.
+
+**LLM call sites are capped at five.** L1 column map, L2 counterparty, L3 evidence
+summary, L4 orchestration, L5 reply intent. A sixth is a spec violation and
+`test_there_are_exactly_five_call_sites` will fail. Every one has a mandatory
+fallback: the system degrades, it does not error.
+
+**Tests.** Prefer pure functions tested without fixtures over mocks. If you find
+yourself mocking a database to test business logic, the logic is in the wrong module.
+
+**Comments.** The codebase comments *why*, not *what*, and cites PRD sections where a
+rule is non-obvious. Match that. Do not add narration.
+
+---
+
+## 6. What to do next
+
+Ordered by dependency. Each seam has its module, contract and tests already in place.
+
+### 6.1 Wire the job handlers (`app/services/jobs/handlers.py`)
+
+Twelve registered kinds, each currently raising `NotImplementedError` with a note.
+The Slack router already enqueues all of them. Start with:
+
+1. `ingest_file` — fetch from `files.slack.com` (allowlist the host; §16 SSRF
+   control), then `app/services/extraction/validate.py`, then enqueue
+   `extract_statement`.
+2. `extract_statement` — call `app.services.extraction.service.extract_statement`,
+   persist `Statement` + `BankTransaction` rows **in one transaction**.
+3. `run_matching` — load rows, call `run_matching`, persist `TransactionMatch`,
+   then `build_cases` and persist `ExceptionCase` + `CaseMatchKey`.
+4. `index_message` — `extract_signals`, write `ConversationEvidence`, enqueue
+   `run_listener`.
+5. `run_listener` — the headline feature. Load open-case keys (use
+   `listener/cache.py`), `score_message`, then `decide_notification` for the rate
+   limits, then enqueue an outbox row with `build_listener_hit`.
+
+### 6.2 Outbox HTTP (`app/services/outbox/dispatcher.py:112`)
+
+`_post` needs `slack_sdk.web.async_client.AsyncWebClient.chat_postMessage`.
+Requirements already encoded around it: per-channel 1.1s spacing, honour
+`Retry-After` on 429, retry 5xx, park as `FAILED` after 5 attempts.
+
+### 6.3 Interaction handlers
+
+`INTERACTION_ACTIONS` in `app/services/slack/events.py` maps nine `action_id`s to
+handler names. The `interaction` job must dispatch them. **This is the only path that
+reaches a confirm tool** — apply RBAC against `payload['actor_slack_id']` before
+acting. `proposal_approve` → `apply_resolution` is the one that closes a case.
+
+### 6.4 Agent orchestrator (`app/services/agent/`)
+
+`tools.py` has the contracts; there is no `orchestrator.py` yet. Loop: assemble
+context, call with `model_tool_definitions()`, execute with authorisation checks,
+feed results back, max 6 turns, then `E_AGENT_TURN_BUDGET` and post what it has.
+Never give it the raw statement text or another reconciliation.
+
+### 6.5 Seed script
+
+`make seed` and `make reset-demo` reference `scripts/seed.py`, which does not exist.
+`tests/fixtures/ledger_march.csv` is there as a starting point. A realistic
+Nigerian-bank statement PDF fixture is still needed (PRD §27 item 1) — a synthetic one
+that looks synthetic costs marks.
+
+### 6.6 Known gaps
+
+- No golden-fixture test yet (PRD §20 wants `march_2026.pdf` → expected JSON, byte
+  equality). Needs the statement fixture first.
+- No integration or chaos tests — both need a live Postgres.
+- `_cluster_words` in `extraction/service.py` (the no-ruled-table fallback) is
+  untested; it needs a real PDF.
+- OCR path is coded but unexercised. `ocrmypdf` is in the Dockerfile, not in this
+  dev environment.
+
+---
+
+## 7. Decisions already made — do not silently reverse these
+
+Each resolves a genuine ambiguity or defect in the PRD. Full reasoning is in
+`README.md` under "Decisions and deviations". The two most likely to confuse you:
+
+**Pass 1 (exact matching) applies the date window**, although §6.2's pass-1 sentence
+omits it. Without the window, no pair can ever reach the `TIMING_DIFFERENCE` typing
+rule (§6.3 rule 5) — that rule would be dead code. It is also the financially correct
+reading: a payment booked in March that clears in April is a period-cutoff question
+for a human, not an auto-match.
+
+**Date inference refuses to guess.** A statement where every day value is ≤ 12 is
+genuinely ambiguous (03/04 reads as 3 April or 4 March) and raises
+`E_DATE_FORMAT_AMBIGUOUS`. `infer_date_format` accepts a `period` hint —
+`ingest_statement` already takes `period_hint` — which resolves it. Do not add a
+heuristic that picks one silently.
+
+Also: duplicate detection requires a reference (amount + date alone would flag two
+genuine same-day transfers); a review-band match consumes both sides and blocks
+completion; counterparty scoring uses explicit half-up rounding because Python's
+`round()` is banker's rounding; `case_transaction.active` makes one-open-case-per-
+transaction a real database constraint.
+
+---
+
+## 8. Verification checklist before you commit
+
+```bash
+python -m pytest -q                    # must stay green
+python scripts/generate_ddl.py         # if you touched app/models/
+python -c "import app.main, app.worker" # both entrypoints must import
+```
+
+Three tests are guards rather than feature tests. If you make one fail, fix your
+change — do not weaken the test:
+
+- `test_no_module_assigns_case_state_directly` (rule S1)
+- `test_model_cannot_call_apply_resolution` and the rest of `TestRuleT1`
+- `test_every_routed_job_kind_has_a_worker_handler` (router/worker agreement)

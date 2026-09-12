@@ -5,6 +5,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, PlainTextResponse
 from starlette.middleware.sessions import SessionMiddleware
 
+from app.api.slack import router as slack_router
 from app.api.v1.router import api_router
 from app.core.config import get_settings
 from app.core.correlation import get_correlation_id, set_correlation_id
@@ -60,6 +61,10 @@ async def bankrecon_error_handler(request: Request, exc: BankReconError) -> JSON
 
 
 app.include_router(api_router, prefix=settings.api_v1_prefix)
+
+# Slack posts to fixed URLs configured in the app manifest, so these sit at the
+# root rather than under the versioned API prefix.
+app.include_router(slack_router)
 
 
 @app.get("/healthz", include_in_schema=False)
