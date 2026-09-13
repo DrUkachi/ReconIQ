@@ -188,6 +188,7 @@ async def list_transactions(
     principal: PrincipalDep,
     page: PageDep,
     status: str | None = None,
+    resolution_status: str | None = None,
     q: str | None = None,
 ) -> TransactionPage:
     await _load(session, reconciliation_id, principal.workspace_id)
@@ -197,6 +198,8 @@ async def list_transactions(
     )
     if status:
         statement = statement.where(BankTransaction.status == status)
+    if resolution_status:
+        statement = statement.where(BankTransaction.resolution_status == resolution_status.upper())
     if q:
         term = f"%{q.upper()}%"
         statement = statement.where(

@@ -6,12 +6,13 @@ from sqlalchemy import select
 from app.api.deps import IdempotencyDep, PrincipalDep, SessionDep
 from app.core.errors import BankReconError, ErrorCode
 from app.core.rbac import Action, require
-from app.domain.enums import CaseState, ProposalState
+from app.domain.enums import CaseState, ProposalState, ResolutionStatus
 from app.models.base import utcnow
 from app.models.cases import ExceptionCase, ResolutionProposal
 from app.schemas.api import ProposalDecision, ProposalOut
 from app.services import audit
 from app.services.api_mapping import proposal_out
+from app.services.cases.resolution import set_case_lines_resolution
 from app.services.cases.transitions import transition_case
 
 router = APIRouter(prefix="/proposals", tags=["proposals"])
@@ -90,6 +91,10 @@ async def decide_proposal(
             CaseState.CLOSED,
             actor_user_id=principal.user_id,
             actor_slack_id=principal.slack_user_id,
+        )
+        await set_case_lines_resolution(
+            session, case.id, ResolutionStatus.RESOLVED, actor_user_id=principal.user_id,
+            note=f"{proposal.reason_code}: {body.note or proposal.narrative}"[:2000],
         )
     else:
         await transition_case(

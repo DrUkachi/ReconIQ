@@ -6,7 +6,7 @@ from sqlalchemy import select
 from app.api.deps import IdempotencyDep, PageDep, PrincipalDep, SessionDep, requires
 from app.core.errors import BankReconError, ErrorCode
 from app.core.rbac import Action, require
-from app.domain.enums import CaseState, EvidenceKind, ProposalState
+from app.domain.enums import CaseState, EvidenceKind, ProposalState, ResolutionStatus
 from app.models.cases import (
     CaseEvidence,
     CaseTransaction,
@@ -30,6 +30,7 @@ from app.services.api_mapping import (
     proposal_out,
     transaction_out,
 )
+from app.services.cases.resolution import set_case_lines_resolution
 from app.services.cases.transitions import transition_case
 
 router = APIRouter(prefix="/cases", tags=["cases"])
@@ -43,12 +44,16 @@ async def list_cases(
     state: str | None = None,
     assignee: uuid.UUID | None = None,
     reconciliation_id: uuid.UUID | None = None,
+    resolution_status: ResolutionStatus | None = None,
 ) -> CasePage:
     statement = select(ExceptionCase).where(
         ExceptionCase.workspace_id == principal.workspace_id
     )
     if state:
         statement = statement.where(ExceptionCase.state == state)
+    if resolution_status:
+        resolved = ExceptionCase.state.in_([str(CaseState.RESOLVED), str(CaseState.CLOSED)])
+        statement = statement.where(resolved if resolution_status is ResolutionStatus.RESOLVED else ~resolved)
     if assignee:
         statement = statement.where(ExceptionCase.assignee_id == assignee)
     if reconciliation_id:
@@ -249,6 +254,7 @@ async def reopen_case(
         actor_slack_id=principal.slack_user_id,
         reason=body.reason,
     )
+    await set_case_lines_resolution(session, case_id, ResolutionStatus.PENDING)
     await session.commit()
     return await get_case(case_id, session, principal)
 

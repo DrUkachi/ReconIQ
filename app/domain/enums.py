@@ -53,6 +53,14 @@ class CaseType(StrEnum):
     MISSING_LEDGER_RECORD = "MISSING_LEDGER_RECORD"
     UNIDENTIFIED_CREDIT = "UNIDENTIFIED_CREDIT"
     MISSING_BANK_ENTRY = "MISSING_BANK_ENTRY"
+    UNMATCHED_TRANSACTION = "UNMATCHED_TRANSACTION"
+
+
+class ResolutionStatus(StrEnum):
+    """Per statement or ledger line: PENDING until matched or its case is confirmed resolved."""
+
+    PENDING = "PENDING"
+    RESOLVED = "RESOLVED"
 
 
 class Priority(StrEnum):

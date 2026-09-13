@@ -10,6 +10,7 @@ from app.domain.enums import (
     MatchState,
     Priority,
     ReconciliationState,
+    ResolutionStatus,
     Role,
     TransactionStatus,
 )
@@ -105,6 +106,9 @@ class TransactionOut(BaseModel):
     status: TransactionStatus
     balance: Money | None = None
     warnings: list[str] = Field(default_factory=list)
+    resolution_status: ResolutionStatus = ResolutionStatus.PENDING
+    resolved_at: datetime | None = None
+    resolution_note: str | None = None
 
 
 class TransactionDetail(TransactionOut):
@@ -149,6 +153,8 @@ class CaseSummary(BaseModel):
     due_at: datetime | None = None
     permalink: str | None = None
     version: int = 0
+    resolution_status: ResolutionStatus = ResolutionStatus.PENDING
+    slack_channel_id: str | None = None
 
 
 class CaseDetail(CaseSummary):

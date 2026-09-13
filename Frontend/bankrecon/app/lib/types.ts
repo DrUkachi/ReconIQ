@@ -90,7 +90,12 @@ export type TransactionOut = {
   status: string;
   balance: Money | null;
   warnings: string[];
+  resolution_status: ResolutionStatus;
+  resolved_at: string | null;
+  resolution_note: string | null;
 };
+
+export type ResolutionStatus = "PENDING" | "RESOLVED";
 
 export type TransactionDetail = TransactionOut & {
   candidates: CandidateOut[];
@@ -133,6 +138,8 @@ export type CaseSummary = {
   due_at: string | null;
   permalink: string | null;
   version: number;
+  resolution_status: ResolutionStatus;
+  slack_channel_id: string | null;
 };
 
 export type CaseDetail = CaseSummary & {

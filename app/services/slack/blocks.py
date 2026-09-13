@@ -92,14 +92,10 @@ def build_case_thread_opener(
             listing += f"\n_and {remainder} more, in the web app_"
         blocks.append(_section(listing))
     blocks.append(
-        {
-            "type": "actions",
-            "elements": [
-                _button("Assign to me", "case_assign_self", case_id),
-                _button("Find evidence", "case_find_evidence", case_id),
-                _button("Propose resolution", "case_propose", case_id, style="primary"),
-            ],
-        }
+        _context(
+            "Status: *Pending*. Reply in this thread with what you know; when a reply settles it, "
+            f"I will propose a resolution for one-click confirmation. Case `{case_id[:8]}`"
+        )
     )
     return {"blocks": blocks, "text": title}
 

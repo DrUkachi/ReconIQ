@@ -40,6 +40,10 @@ class Workspace(Base, TimestampMixin):
     bot_user_id: Mapped[str | None] = mapped_column(String(32))
     slack_retry_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     recon_channel_id: Mapped[str | None] = mapped_column(String(32))
+    # Team channel per exception route (accounts, payments, treasury); see cases/routing.py.
+    case_channels: Mapped[dict] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb")
+    )
     approval_value_threshold_minor: Mapped[int] = mapped_column(
         BigInteger, nullable=False, default=50_000_000
     )
@@ -162,6 +166,13 @@ class BankTransaction(Base, TimestampMixin):
         String(16), nullable=False, default=TransactionStatus.UNMATCHED
     )
     warnings: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    # PENDING until the line is matched automatically or its case is confirmed resolved.
+    resolution_status: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="PENDING", server_default="PENDING"
+    )
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    resolved_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("app_user.id"))
+    resolution_note: Mapped[str | None] = mapped_column(Text)
 
 
 class PaymentRecordRow(Base, TimestampMixin):
@@ -195,6 +206,12 @@ class PaymentRecordRow(Base, TimestampMixin):
     counterparty_raw: Mapped[str] = mapped_column(String(255), default="")
     counterparty_norm: Mapped[str] = mapped_column(String(255), default="", index=True)
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="OPEN")
+    resolution_status: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="PENDING", server_default="PENDING"
+    )
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    resolved_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("app_user.id"))
+    resolution_note: Mapped[str | None] = mapped_column(Text)
 
 
 class TransactionMatch(Base, TimestampMixin):

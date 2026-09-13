@@ -23,4 +23,9 @@ def test_web_identity_keys_fit_existing_database_columns():
 
 def test_display_name_and_workspace_name_fall_back_cleanly():
     assert display_name(None, "north.wind@example.com") == "North Wind"
-    assert workspace_name(None, "north.wind@example.com") == "Example Workspace"
+    assert workspace_name(None, "north.wind@example.com") == "North Wind Workspace"
+
+
+def test_people_on_a_shared_mail_domain_get_separate_workspaces():
+    assert web_workspace_key("a.person@gmail.com") != web_workspace_key("another@gmail.com")
+    assert web_workspace_key(" A.Person@Gmail.com") == web_workspace_key("a.person@gmail.com")

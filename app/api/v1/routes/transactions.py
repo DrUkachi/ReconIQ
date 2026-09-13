@@ -6,7 +6,7 @@ from sqlalchemy import select
 from app.api.deps import IdempotencyDep, PrincipalDep, SessionDep, requires
 from app.core.errors import BankReconError, ErrorCode
 from app.core.rbac import Action
-from app.domain.enums import MatchState, TransactionStatus
+from app.domain.enums import MatchState, ResolutionStatus, TransactionStatus
 from app.models.base import utcnow
 from app.models.cases import CaseTransaction
 from app.models.core import (
@@ -110,6 +110,14 @@ async def decide_match(
     match.decided_by = principal.user_id
     match.decided_at = utcnow()
     txn.status = TransactionStatus.CONFIRMED if confirmed else TransactionStatus.UNMATCHED
+    record = await session.get(PaymentRecordRow, match.payment_record_id)
+    for line in (txn, record):
+        if line is None:
+            continue
+        line.resolution_status = ResolutionStatus.RESOLVED if confirmed else ResolutionStatus.PENDING
+        line.resolved_at = utcnow() if confirmed else None
+        line.resolved_by = principal.user_id if confirmed else None
+        line.resolution_note = "MATCH_CONFIRMED" if confirmed else None
 
     await audit.record(
         session,
