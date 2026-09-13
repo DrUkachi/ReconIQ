@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 
 import { backendHeaders } from "@/app/lib/backend-auth";
-import { BACKEND_API_BASE_URL, BACKEND_SESSION_COOKIE } from "@/app/lib/config";
+import {
+  BACKEND_API_BASE_URL,
+  BACKEND_SESSION_COOKIE,
+  LEGACY_BACKEND_SESSION_COOKIES,
+} from "@/app/lib/config";
 import { auth0 } from "@/lib/auth0";
 
 function extractSessionCookie(header: string | null) {
@@ -24,7 +28,8 @@ export async function GET(request: Request) {
     return NextResponse.redirect(new URL(`/auth/login?returnTo=${encodeURIComponent("/auth/complete")}`, url));
   }
 
-  // Workspaces are keyed by email domain, so an unverified address could join someone else's.
+  // The backend signs a verified email in as its Slack member (or a private workspace), so an
+  // unverified address could claim someone else's identity.
   if (authSession.user.email_verified !== true) {
     return NextResponse.redirect(new URL("/auth/verify-email", url));
   }
@@ -66,6 +71,9 @@ export async function GET(request: Request) {
     secure: process.env.NODE_ENV === "production",
     path: "/",
   });
+  for (const legacy of LEGACY_BACKEND_SESSION_COOKIES) {
+    nextResponse.cookies.delete(legacy);
+  }
 
   return nextResponse;
 }
