@@ -235,3 +235,41 @@ async def test_web_sign_in_joins_the_slack_workspace_for_a_member_email(recon_db
         other, stranger = await ensure_web_identity(session, email="stranger@example.com", slack_lookup=lookup)
     assert joined.id == workspace.id and user.slack_user_id == "U_OWNER" and user.role == Role.OWNER
     assert other.id != workspace.id and stranger.role == Role.OWNER
+
+
+async def list_page(session, workspace_id, **overrides):
+    from app.api.v1.routes.transactions import list_all_transactions
+
+    params = dict(page=1, page_size=10, resolution_status=None, status=None, currency=None,
+                  reconciliation_id=None, q=None)
+    params.update(overrides)
+    return await list_all_transactions(session=session, principal=SimpleNamespace(workspace_id=workspace_id), **params)
+
+
+@pytest.mark.asyncio
+async def test_workspace_transaction_list_pages_through_every_line_with_filters_and_cases(recon_db):
+    factory, workspace, ids = recon_db
+    async with factory() as session:
+        total = await session.scalar(select(func.count()).select_from(BankTransaction).where(
+            BankTransaction.reconciliation_id.in_(ids)))
+        first = await list_page(session, workspace.id)
+        seen = [item.id for item in first.items]
+        for number in range(2, first.pages + 1):
+            seen += [item.id for item in (await list_page(session, workspace.id, page=number)).items]
+        beyond = await list_page(session, workspace.id, page=999)
+        pending = await list_page(session, workspace.id, page_size=100, resolution_status=ResolutionStatus.PENDING)
+        resolved = await list_page(session, workspace.id, page_size=100, resolution_status=ResolutionStatus.RESOLVED)
+        in_case = await list_page(session, workspace.id, page_size=100, status=TransactionStatus.IN_CASE)
+        usd = await list_page(session, workspace.id, page_size=100, currency="usd")
+        other_workspace = await list_page(session, uuid.uuid4())
+
+    assert first.total == total and len(first.items) == 10 and first.pages == -(-total // 10)
+    assert len(seen) == len(set(seen)) == total
+    assert beyond.page == first.pages and beyond.items
+    assert pending.total + resolved.total == total
+    assert pending.resolution_counts == first.resolution_counts
+    assert {i.resolution_status for i in pending.items} == {ResolutionStatus.PENDING}
+    assert in_case.items and all(i.case_id and i.case_type for i in in_case.items)
+    assert usd.items and {i.currency for i in usd.items} == {"USD"}
+    assert first.currencies == sorted(first.currencies) and "USD" in first.currencies
+    assert other_workspace.total == 0 and other_workspace.items == []

@@ -16,6 +16,7 @@ import type {
   SessionData,
   SettingsOut,
   TransactionDetail,
+  TransactionListPage,
   TransactionPage,
 } from "./types";
 
@@ -104,6 +105,11 @@ export function getReconciliationAudit(reconciliationId: string) {
   return backendRequest<AuditEventOut[]>(
     `/reconciliations/${reconciliationId}/audit`,
   );
+}
+
+export function getAllTransactions(searchParams?: URLSearchParams) {
+  const suffix = searchParams?.toString() ? `?${searchParams.toString()}` : "";
+  return backendRequest<TransactionListPage>(`/transactions${suffix}`);
 }
 
 export function getTransaction(transactionId: string) {
