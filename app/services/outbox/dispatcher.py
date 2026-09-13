@@ -86,6 +86,7 @@ async def dispatch_once(session: AsyncSession, client=None) -> bool:
         id=row.id, workspace_id=row.workspace_id, channel_id=row.channel_id,
         thread_ts=row.thread_ts, blocks=row.blocks, fallback_text=row.fallback_text,
         attempts=row.attempts, leased_until=row.leased_until,
+        case_id=row.case_id, builder=row.builder,
     )
     token = workspace.bot_token or ""
     # Outbound side effects can only observe an already committed lease/outbox.
@@ -103,10 +104,19 @@ async def dispatch_once(session: AsyncSession, client=None) -> bool:
         if isinstance(exc, SlackApiError) and exc.response.status_code == 429:
             await session.execute(update(Workspace).where(Workspace.id == delivery.workspace_id).values(slack_retry_at=retry_at))
         logger.warning("outbox_post_failed", extra={"component": "outbox", "error_code": code})
-    await session.execute(update(SlackOutbox).where(
+    recorded = await session.execute(update(SlackOutbox).where(
         SlackOutbox.id == delivery.id, SlackOutbox.state == OutboxState.LEASED,
         SlackOutbox.leased_until == delivery.leased_until,
     ).values(**values))
+    if (values.get("state") == OutboxState.SENT and recorded.rowcount and delivery.case_id
+            and delivery.builder == "case_thread_opener" and not delivery.thread_ts):
+        # The opener's ts is the case thread: replies there are matched back to this case.
+        from app.models.cases import ExceptionCase
+
+        await session.execute(update(ExceptionCase).where(
+            ExceptionCase.id == delivery.case_id, ExceptionCase.slack_thread_ts.is_(None),
+        ).values(slack_channel_id=delivery.channel_id, slack_thread_ts=values["message_ts"],
+                 permalink=values.get("permalink")))
     await session.commit()
     return True
 

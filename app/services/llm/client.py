@@ -235,12 +235,19 @@ class LLMClient:
 
     def parse_reply_intent(self, reply_text: str, case_context: str = "") -> dict[str, Any]:
         """Failure yields UNCLEAR, which the caller turns into a button prompt."""
+        from app.domain.enums import ResolutionReasonCode
+
+        codes = ", ".join(str(code) for code in ResolutionReasonCode)
         try:
             return self._structured(
                 CallSite.L5_REPLY_INTENT,
                 system=(
-                    "Classify a reply in a finance exception thread. Return UNCLEAR when "
-                    "the reply does not clearly express one intent.\n" + DOCUMENT_GUARD
+                    "Classify a team member's reply in a finance exception thread. Use "
+                    "PROPOSE_RESOLUTION only when the reply states how the exception was settled "
+                    "or explained, and set reason_code to exactly one of: " + codes + ". Use "
+                    "PROVIDE_EVIDENCE for partial facts that do not settle it, ASK_QUESTION for "
+                    "questions, and UNCLEAR when the reply does not clearly express one intent. "
+                    "Confidence is HIGH only when the reply is explicit.\n" + DOCUMENT_GUARD
                 ),
                 user=wrap_document(f"CASE: {case_context[:500]}\nREPLY: {reply_text[:1000]}"),
                 max_tokens=512,

@@ -1,5 +1,37 @@
 # Handoff log
 
+## Update: routed case threads and Resolution Status, 2026-09-13
+
+Every unresolved case is posted as its own thread in the owning team's channel
+(`app/services/cases/routing.py`): bank charges and timing differences go to
+treasury; missing/unidentified payments and duplicates go to payments; amount
+mismatches, ambiguous matches, extraction problems and unexplained lines go to
+accounts. Channels live in `workspace.case_channels` (set with
+`scripts.configure_slack --accounts-channel/--payments-channel/--treasury-channel`);
+the recon channel is the fallback. Lines that nothing explains now get an
+`UNMATCHED_TRANSACTION` case instead of being left without an owner.
+
+`bank_transaction` and `payment_record` carry `resolution_status` (PENDING/RESOLVED),
+`resolved_at`, `resolved_by` and `resolution_note` (migration 0005). Automatic and
+confirmed matches start RESOLVED; case lines become RESOLVED only when a proposal is
+approved (Slack button or web), and go back to PENDING on reopen. The API exposes
+the fields on transactions and a derived `resolution_status` on cases.
+
+A reply in a case thread is stored as unverified evidence. When the model reads it
+as settling the case with a valid reason code, a proposal with Approve/Reject is posted
+in the thread; otherwise the case stays Pending. Only a verified click by the assignee
+or an approver (RBAC, value threshold) applies it (rule T1 unchanged). The dispatcher
+records each opener's ts as the case thread.
+
+Web sign-in looks the verified email up in installed Slack workspaces
+(`users.lookupByEmail`, needs the `users:read.email` scope) and signs in as that Slack
+member, so the dashboard shows Slack-run reconciliations. Other emails get a private
+workspace keyed by the full address (previously by mail domain, which would have put
+unrelated gmail.com users together).
+
+Backfill existing runs with `python -m scripts.post_case_threads --dry-run`, then
+without `--dry-run`; the worker sends the queued threads.
+
 ## Update: provider selection correction, 2026-09-12
 
 Slack delivery is now confirmed: real mention events reached the worker and its

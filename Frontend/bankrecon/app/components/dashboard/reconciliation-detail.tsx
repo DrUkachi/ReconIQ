@@ -203,6 +203,10 @@ export function ReconciliationDetailView({
                             value={titleize(transaction.status)}
                             tone={transaction.status === "REVIEW" ? "amber" : "emerald"}
                           />
+                          <Badge
+                            value={transaction.resolution_status === "RESOLVED" ? "Resolved" : "Pending"}
+                            tone={transaction.resolution_status === "RESOLVED" ? "emerald" : "amber"}
+                          />
                           {transaction.case_id ? <Badge value="Linked case" tone="rose" /> : null}
                         </div>
                         <p className="text-sm text-slate-700">{transaction.narration}</p>
@@ -378,7 +382,11 @@ export function ReconciliationDetailView({
                       <Badge value={item.priority} tone="rose" />
                     </div>
                     <div className="mt-3 flex flex-wrap gap-2">
-                      <Badge value={titleize(item.state)} tone="amber" />
+                      <Badge
+                        value={item.resolution_status === "RESOLVED" ? "Resolved" : "Pending"}
+                        tone={item.resolution_status === "RESOLVED" ? "emerald" : "amber"}
+                      />
+                      <Badge value={titleize(item.state)} tone="slate" />
                       <Badge value={formatMoney(item.value_at_risk)} tone="cyan" />
                     </div>
                     {item.evidence.length ? (

@@ -33,6 +33,7 @@ CREATE TABLE workspace (
 	bot_user_id VARCHAR(32),
 	slack_retry_at TIMESTAMP WITH TIME ZONE,
 	recon_channel_id VARCHAR(32),
+	case_channels JSONB DEFAULT '{}'::jsonb NOT NULL,
 	approval_value_threshold_minor BIGINT NOT NULL,
 	uninstalled_at TIMESTAMP WITH TIME ZONE,
 	created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,
@@ -199,13 +200,18 @@ CREATE TABLE bank_transaction (
 	balance_minor BIGINT,
 	status VARCHAR(16) NOT NULL,
 	warnings JSONB NOT NULL,
+	resolution_status VARCHAR(16) DEFAULT 'PENDING' NOT NULL,
+	resolved_at TIMESTAMP WITH TIME ZONE,
+	resolved_by UUID,
+	resolution_note TEXT,
 	created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,
 	updated_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,
 	CONSTRAINT pk_bank_transaction PRIMARY KEY (id),
 	CONSTRAINT ck_bank_transaction_amount_positive CHECK (amount_minor > 0),
 	CONSTRAINT ck_bank_transaction_dir CHECK (direction IN ('CREDIT','DEBIT')),
 	CONSTRAINT uq_bank_transaction_reconciliation_id UNIQUE (reconciliation_id, row_index),
-	CONSTRAINT fk_bank_transaction_reconciliation_id_reconciliation FOREIGN KEY(reconciliation_id) REFERENCES reconciliation (id) ON DELETE CASCADE
+	CONSTRAINT fk_bank_transaction_reconciliation_id_reconciliation FOREIGN KEY(reconciliation_id) REFERENCES reconciliation (id) ON DELETE CASCADE,
+	CONSTRAINT fk_bank_transaction_resolved_by_app_user FOREIGN KEY(resolved_by) REFERENCES app_user (id)
 );
 CREATE INDEX ix_bank_transaction_counterparty_norm ON bank_transaction (counterparty_norm);
 CREATE INDEX ix_bank_transaction_recon_amount_date ON bank_transaction (reconciliation_id, amount_minor, value_date);
@@ -259,13 +265,18 @@ CREATE TABLE payment_record (
 	counterparty_raw VARCHAR(255) NOT NULL,
 	counterparty_norm VARCHAR(255) NOT NULL,
 	status VARCHAR(16) NOT NULL,
+	resolution_status VARCHAR(16) DEFAULT 'PENDING' NOT NULL,
+	resolved_at TIMESTAMP WITH TIME ZONE,
+	resolved_by UUID,
+	resolution_note TEXT,
 	created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,
 	updated_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,
 	CONSTRAINT pk_payment_record PRIMARY KEY (id),
 	CONSTRAINT ck_payment_record_amount_positive CHECK (amount_minor > 0),
 	CONSTRAINT ck_payment_record_dir CHECK (direction IN ('CREDIT','DEBIT')),
 	CONSTRAINT fk_payment_record_workspace_id_workspace FOREIGN KEY(workspace_id) REFERENCES workspace (id) ON DELETE CASCADE,
-	CONSTRAINT fk_payment_record_reconciliation_id_reconciliation FOREIGN KEY(reconciliation_id) REFERENCES reconciliation (id) ON DELETE SET NULL
+	CONSTRAINT fk_payment_record_reconciliation_id_reconciliation FOREIGN KEY(reconciliation_id) REFERENCES reconciliation (id) ON DELETE SET NULL,
+	CONSTRAINT fk_payment_record_resolved_by_app_user FOREIGN KEY(resolved_by) REFERENCES app_user (id)
 );
 CREATE INDEX ix_payment_record_counterparty_norm ON payment_record (counterparty_norm);
 CREATE INDEX ix_payment_record_open ON payment_record (workspace_id, amount_minor, record_date) WHERE status = 'OPEN';

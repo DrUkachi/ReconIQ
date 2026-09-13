@@ -7,7 +7,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import BankReconError, ErrorCode
-from app.domain.enums import Direction, MatchState, ReconciliationState, TransactionStatus
+from app.domain.enums import Direction, MatchState, ReconciliationState, ResolutionStatus, TransactionStatus
 from app.domain.records import BankTxn, PaymentRecord
 from app.models.base import utcnow
 from app.models.cases import CaseMatchKey, CaseRecord, CaseTransaction, ExceptionCase
@@ -70,6 +70,12 @@ async def match_reconciliation(
         ))
         bank_by_id[match.txn_id].status = TransactionStatus.AUTO if match.state == MatchState.AUTO else TransactionStatus.REVIEW
         ledger_by_id[match.record_id].status = "MATCHED" if match.state == MatchState.AUTO else "REVIEW"
+        if match.state == MatchState.AUTO:
+            # An automatic match needs no human decision, so both lines start resolved.
+            for line in (bank_by_id[match.txn_id], ledger_by_id[match.record_id]):
+                line.resolution_status = ResolutionStatus.RESOLVED
+                line.resolved_at = utcnow()
+                line.resolution_note = "AUTO_MATCH"
     for draft in drafts:
         case = ExceptionCase(
             workspace_id=workspace_id, reconciliation_id=reconciliation_id, type=draft.type,

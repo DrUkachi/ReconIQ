@@ -16,6 +16,7 @@ from app.models.core import AppUser, Workspace
 from app.models.slack_intake import SlackIntake, SlackIntakeFile
 from app.services import audit
 from app.services.ingestion.files import parse_ledger_csv, parse_signed_pdf
+from app.services.cases.slack_threads import enqueue_case_threads
 from app.services.ingestion.persistence import import_signed_sources
 from app.services.jobs import queue
 from app.services.matching.persistence import match_reconciliation
@@ -276,3 +277,6 @@ async def process_intake(job, *, sessionmaker=None):
         for summary in summaries:
             counts = ", ".join(f"{key}: {value}" for key, value in summary["bank_status_counts"].items())
             await say(session, intake, f"{summary['currency']} processing finished. {counts}. Cases: {summary['cases']}.\nRun: {summary['id']}. Review outstanding items before closing the reconciliation.", f"summary:{intake.revision}:{summary['currency']}")
+        # After the summaries, so each team sees its pending cases only once the run is announced.
+        for rid in ids:
+            await enqueue_case_threads(session, workspace_id=workspace.id, reconciliation_id=rid)

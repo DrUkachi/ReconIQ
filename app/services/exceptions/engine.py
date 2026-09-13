@@ -27,6 +27,7 @@ MEDIUM_PRIORITY_TYPES: frozenset[CaseType] = frozenset(
         CaseType.AMBIGUOUS_MATCH,
         CaseType.AMOUNT_MISMATCH,
         CaseType.EXTRACTION_UNCERTAIN,
+        CaseType.UNMATCHED_TRANSACTION,
     }
 )
 
@@ -41,14 +42,25 @@ def assign_priority(case_type: CaseType, value_at_risk_minor: int, threshold_min
     return Priority.LOW
 
 
+def unmatched_title(direction: Direction | str, amount_minor: int, currency: str) -> str:
+    return f"Unmatched {str(direction).lower()} {format_minor(amount_minor, currency)}"
+
+
+UNMATCHED_SUMMARY = "No ledger record or exception rule explains this line."
+
+
 def type_transaction(
     txn: BankTxn,
     result: MatchingResult,
     *,
     duplicated: frozenset[str],
     uncertain: frozenset[str],
-) -> CaseType | None:
-    """PRD 6.3 typing table. Evaluated in order; first match wins."""
+) -> CaseType:
+    """PRD 6.3 typing table. Evaluated in order; first match wins.
+
+    The final rule gives any residual line no other rule explains its own case, so every
+    pending line has an owned place to be resolved.
+    """
     if txn.id in duplicated:
         return CaseType.DUPLICATE_BANK_ENTRY
     if txn.id in uncertain:
@@ -71,7 +83,7 @@ def type_transaction(
                 if txn.counterparty_norm
                 else CaseType.UNIDENTIFIED_CREDIT
             )
-    return None
+    return CaseType.UNMATCHED_TRANSACTION
 
 
 def build_cases(
@@ -98,11 +110,7 @@ def build_cases(
         txn = txn_by_id.get(txn_id)
         if txn is None:
             continue
-        case_type = type_transaction(
-            txn, result, duplicated=duplicated, uncertain=uncertain
-        )
-        if case_type is not None:
-            typed[case_type].append(txn)
+        typed[type_transaction(txn, result, duplicated=duplicated, uncertain=uncertain)].append(txn)
 
     drafts: list[CaseDraft] = []
 
@@ -181,6 +189,7 @@ def build_cases(
         CaseType.AMBIGUOUS_MATCH,
         CaseType.AMOUNT_MISMATCH,
         CaseType.TIMING_DIFFERENCE,
+        CaseType.UNMATCHED_TRANSACTION,
     ):
         for txn in typed.get(case_type, []):
             drafts.append(
@@ -244,6 +253,8 @@ def _single_title(case_type: CaseType, txn: BankTxn) -> str:
         return f"Two records fit {amount} equally well"
     if case_type is CaseType.AMOUNT_MISMATCH:
         return f"Amount mismatch on {amount}"
+    if case_type is CaseType.UNMATCHED_TRANSACTION:
+        return unmatched_title(txn.direction, txn.amount_minor, txn.currency)
     return f"Timing difference on {amount}"
 
 
@@ -261,6 +272,13 @@ def _single_summary(case_type: CaseType, txn: BankTxn, result: MatchingResult) -
             f"An exact amount and reference match exists ({', '.join(records)}) but falls "
             f"outside the date window, so it is a period-cutoff question."
         )
+    if case_type is CaseType.UNMATCHED_TRANSACTION:
+        if candidates:
+            return (
+                f"The nearest ledger record {candidates[0].record_id} scores only "
+                f"{candidates[0].score}, below the review floor, and no exception rule applies."
+            )
+        return UNMATCHED_SUMMARY
     if candidates:
         return (
             f"Best candidate {candidates[0].record_id} scores {candidates[0].score} but the "

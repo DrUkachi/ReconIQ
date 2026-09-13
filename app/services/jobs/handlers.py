@@ -21,6 +21,7 @@ async def run_matching(job) -> None:
 
     from app.core.db import get_sessionmaker
     from app.core.errors import BankReconError, ErrorCode
+    from app.services.cases.slack_threads import enqueue_case_threads
     from app.services.matching.persistence import match_reconciliation
 
     try:
@@ -31,6 +32,7 @@ async def run_matching(job) -> None:
     async with get_sessionmaker()() as session:
         async with session.begin():
             await match_reconciliation(session, reconciliation_id=reconciliation_id, workspace_id=workspace_id)
+            await enqueue_case_threads(session, workspace_id=workspace_id, reconciliation_id=reconciliation_id)
 
 
 async def ingest_file(job) -> None:
@@ -64,10 +66,11 @@ async def run_listener(job) -> None:
 
 
 async def case_thread_reply(job) -> None:
-    """A reply in a case thread: L5 intent parsing, then the matching action."""
+    """A thread reply: intake and chat threads keep their handlers, case threads record evidence."""
     from app.core.db import get_sessionmaker
     from app.models.slack_intake import SlackIntake
     from app.models.slack_chat import SlackChatTurn
+    from app.services.cases.comments import handle_case_comment
     from app.services.slack.intake_rules import is_intake_update
     from sqlalchemy import select
     event = job.payload.get("event", {})
@@ -86,7 +89,9 @@ async def case_thread_reply(job) -> None:
     if chat:
         await agent_turn(job)
         return
-    raise NotImplementedError("Case resolution replies are outside intake scope")
+    if not await handle_case_comment(job):
+        logger.info("thread_reply_ignored", extra={"component": "slack", "action": "case_thread_reply",
+                                                   "outcome": "not_a_case_thread"})
 
 
 async def backfill_channel(job) -> None:
@@ -103,12 +108,9 @@ async def app_home(job) -> None:
 
 
 async def interaction(job) -> None:
-    """Dispatch a verified Block Kit interaction.
-
-    Rule T1: this is the only path that reaches a confirm tool, and it must apply
-    RBAC against payload['actor_slack_id'] before acting.
-    """
-    raise NotImplementedError("wire to the interaction handlers in slack/events.py")
+    """Dispatch a verified Block Kit interaction; RBAC is applied to the Slack-signed actor."""
+    from app.services.cases.interactions import handle_interaction
+    await handle_interaction(job)
 
 
 REGISTRY: dict[str, JobHandler] = {

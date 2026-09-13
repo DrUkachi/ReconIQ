@@ -1,3 +1,4 @@
+from app.domain.enums import CaseState, ResolutionStatus
 from app.domain.money import format_minor
 from app.models.cases import CaseEvidence, ExceptionCase, ResolutionProposal
 from app.models.core import BankTransaction
@@ -31,7 +32,15 @@ def transaction_out(row: BankTransaction) -> TransactionOut:
         status=row.status,
         balance=money(row.balance_minor, row.currency) if row.balance_minor is not None else None,
         warnings=list(row.warnings or []),
+        resolution_status=row.resolution_status,
+        resolved_at=row.resolved_at,
+        resolution_note=row.resolution_note,
     )
+
+
+def case_resolution_status(state: str) -> ResolutionStatus:
+    """A case is Resolved once a confirmed resolution applied; everything before that is Pending."""
+    return ResolutionStatus.RESOLVED if state in (CaseState.RESOLVED, CaseState.CLOSED) else ResolutionStatus.PENDING
 
 
 def case_summary(case: ExceptionCase) -> CaseSummary:
@@ -46,6 +55,8 @@ def case_summary(case: ExceptionCase) -> CaseSummary:
         due_at=case.due_at,
         permalink=case.permalink,
         version=case.version,
+        resolution_status=case_resolution_status(case.state),
+        slack_channel_id=case.slack_channel_id,
     )
 
 
