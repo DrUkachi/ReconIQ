@@ -182,6 +182,33 @@ class CasePage(BaseModel):
     cursor: Cursor
 
 
+class TransactionListItem(TransactionOut):
+    """A statement line with the run and the case (if any) that it belongs to."""
+
+    currency: str
+    reconciliation_id: uuid.UUID
+    account_last4: str
+    period_start: date
+    period_end: date
+    case_id: uuid.UUID | None = None
+    case_type: CaseType | None = None
+    case_state: CaseState | None = None
+    case_permalink: str | None = None
+
+
+class TransactionListPage(BaseModel):
+    """Numbered pages rather than a cursor, so the web table can jump to any page."""
+
+    items: list[TransactionListItem]
+    page: int
+    page_size: int
+    total: int
+    pages: int
+    # Counts under every filter except resolution_status, for the Pending/Resolved tabs.
+    resolution_counts: dict[str, int] = Field(default_factory=dict)
+    currencies: list[str] = Field(default_factory=list)
+
+
 # --- request bodies ---------------------------------------------------------
 
 

@@ -97,6 +97,28 @@ export type TransactionOut = {
 
 export type ResolutionStatus = "PENDING" | "RESOLVED";
 
+export type TransactionListItem = TransactionOut & {
+  currency: string;
+  reconciliation_id: string;
+  account_last4: string;
+  period_start: string;
+  period_end: string;
+  case_id: string | null;
+  case_type: string | null;
+  case_state: string | null;
+  case_permalink: string | null;
+};
+
+export type TransactionListPage = {
+  items: TransactionListItem[];
+  page: number;
+  page_size: number;
+  total: number;
+  pages: number;
+  resolution_counts: Partial<Record<ResolutionStatus, number>>;
+  currencies: string[];
+};
+
 export type TransactionDetail = TransactionOut & {
   candidates: CandidateOut[];
   match_state: string | null;

@@ -1,25 +1,149 @@
+import math
 import uuid
+from typing import Annotated
 
-from fastapi import APIRouter
-from sqlalchemy import select
+from fastapi import APIRouter, Query
+from sqlalchemy import func, select
 
 from app.api.deps import IdempotencyDep, PrincipalDep, SessionDep, requires
 from app.core.errors import BankReconError, ErrorCode
 from app.core.rbac import Action
 from app.domain.enums import MatchState, ResolutionStatus, TransactionStatus
 from app.models.base import utcnow
-from app.models.cases import CaseTransaction
+from app.models.cases import CaseTransaction, ExceptionCase
 from app.models.core import (
     BankTransaction,
     PaymentRecordRow,
     Reconciliation,
     TransactionMatch,
 )
-from app.schemas.api import CandidateOut, MatchDecision, ScoreComponents, TransactionDetail
+from app.schemas.api import (
+    CandidateOut,
+    MatchDecision,
+    ScoreComponents,
+    TransactionDetail,
+    TransactionListItem,
+    TransactionListPage,
+)
 from app.services import audit
 from app.services.api_mapping import money, transaction_out
 
 router = APIRouter(prefix="/transactions", tags=["transactions"])
+
+
+@router.get("", response_model=TransactionListPage)
+async def list_all_transactions(
+    session: SessionDep,
+    principal: PrincipalDep,
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=100)] = 25,
+    resolution_status: ResolutionStatus | None = None,
+    status: TransactionStatus | None = None,
+    currency: Annotated[str | None, Query(min_length=3, max_length=3)] = None,
+    reconciliation_id: uuid.UUID | None = None,
+    q: Annotated[str | None, Query(max_length=100)] = None,
+) -> TransactionListPage:
+    """Every statement line in the workspace, newest first, one numbered page at a time."""
+    in_workspace = (Reconciliation.id == BankTransaction.reconciliation_id) & (
+        Reconciliation.workspace_id == principal.workspace_id
+    )
+    filters = []
+    if status:
+        filters.append(BankTransaction.status == status)
+    if currency:
+        filters.append(BankTransaction.currency == currency.upper())
+    if reconciliation_id:
+        filters.append(BankTransaction.reconciliation_id == reconciliation_id)
+    if q and q.strip():
+        term = q.strip()
+        filters.append(
+            BankTransaction.narration.icontains(term, autoescape=True)
+            | BankTransaction.reference_norm.icontains(term, autoescape=True)
+            | BankTransaction.counterparty_norm.icontains(term, autoescape=True)
+        )
+
+    counts = {
+        str(key): int(value)
+        for key, value in (
+            await session.execute(
+                select(BankTransaction.resolution_status, func.count())
+                .join(Reconciliation, in_workspace)
+                .where(*filters)
+                .group_by(BankTransaction.resolution_status)
+            )
+        ).all()
+    }
+    if resolution_status:
+        filters.append(BankTransaction.resolution_status == resolution_status)
+        total = counts.get(str(resolution_status), 0)
+    else:
+        total = sum(counts.values())
+    pages = max(1, math.ceil(total / page_size))
+    page = min(page, pages)
+
+    rows = (
+        await session.execute(
+            select(BankTransaction, Reconciliation)
+            .join(Reconciliation, in_workspace)
+            .where(*filters)
+            .order_by(
+                BankTransaction.value_date.desc(),
+                Reconciliation.currency,
+                BankTransaction.row_index,
+                BankTransaction.id,
+            )
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+        )
+    ).all()
+
+    cases: dict[uuid.UUID, ExceptionCase] = {}
+    if rows:
+        links = await session.execute(
+            select(CaseTransaction.bank_transaction_id, ExceptionCase)
+            .join(ExceptionCase, ExceptionCase.id == CaseTransaction.case_id)
+            .where(CaseTransaction.bank_transaction_id.in_([txn.id for txn, _ in rows]))
+            # Later rows win: an active link over a historical one, then the newest case.
+            .order_by(CaseTransaction.active, ExceptionCase.created_at)
+        )
+        for txn_id, case in links.all():
+            cases[txn_id] = case
+
+    currencies = (
+        await session.execute(
+            select(Reconciliation.currency)
+            .where(Reconciliation.workspace_id == principal.workspace_id)
+            .distinct()
+            .order_by(Reconciliation.currency)
+        )
+    ).scalars().all()
+
+    items = []
+    for txn, reconciliation in rows:
+        case = cases.get(txn.id)
+        items.append(
+            TransactionListItem(
+                **transaction_out(txn).model_dump(),
+                currency=txn.currency,
+                reconciliation_id=reconciliation.id,
+                account_last4=reconciliation.account_last4,
+                period_start=reconciliation.period_start,
+                period_end=reconciliation.period_end,
+                case_id=case.id if case else None,
+                case_type=case.type if case else None,
+                case_state=case.state if case else None,
+                case_permalink=case.permalink if case else None,
+            )
+        )
+    return TransactionListPage(
+        items=items,
+        page=page,
+        page_size=page_size,
+        total=total,
+        pages=pages,
+        resolution_counts=counts,
+        currencies=list(currencies),
+    )
 
 
 @router.get("/{transaction_id}", response_model=TransactionDetail)
