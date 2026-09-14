@@ -133,6 +133,7 @@ async def list_all_transactions(
                 case_type=case.type if case else None,
                 case_state=case.state if case else None,
                 case_permalink=case.permalink if case else None,
+                case_routed_team=case.routed_team if case else None,
             )
         )
     return TransactionListPage(

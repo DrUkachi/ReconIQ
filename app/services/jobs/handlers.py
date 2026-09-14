@@ -21,7 +21,7 @@ async def run_matching(job) -> None:
 
     from app.core.db import get_sessionmaker
     from app.core.errors import BankReconError, ErrorCode
-    from app.services.cases.slack_threads import enqueue_case_threads
+    from app.services.cases.team_routing import enqueue_routing
     from app.services.matching.persistence import match_reconciliation
 
     try:
@@ -32,7 +32,13 @@ async def run_matching(job) -> None:
     async with get_sessionmaker()() as session:
         async with session.begin():
             await match_reconciliation(session, reconciliation_id=reconciliation_id, workspace_id=workspace_id)
-            await enqueue_case_threads(session, workspace_id=workspace_id, reconciliation_id=reconciliation_id)
+            await enqueue_routing(session, workspace_id=workspace_id, reconciliation_id=reconciliation_id)
+
+
+async def route_cases(job) -> None:
+    """The agent chooses the owning team for a run's exceptions, then each team is notified."""
+    from app.services.cases.team_routing import route_run_cases
+    await route_run_cases(job)
 
 
 async def ingest_file(job) -> None:
@@ -118,6 +124,7 @@ REGISTRY: dict[str, JobHandler] = {
     "process_intake": process_intake,
     "extract_statement": extract_statement,
     "run_matching": run_matching,
+    "route_cases": route_cases,
     "ingest_file": ingest_file,
     "index_message": index_message,
     "reindex_message": reindex_message,

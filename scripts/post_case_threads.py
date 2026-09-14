@@ -1,10 +1,10 @@
-"""Backfill: give every unexplained line a case, then post each unresolved case to its team channel.
+"""Backfill: give every unexplained line a case, then let the agent route each run's unposted cases.
 
     python -m scripts.post_case_threads --dry-run   # report only, writes nothing
-    python -m scripts.post_case_threads             # create cases and queue the Slack threads
+    python -m scripts.post_case_threads             # create cases and queue the routing jobs
 
-The worker's outbox dispatcher sends the queued messages and records each case's thread.
-Safe to rerun: cases already posted or already owning a line are skipped.
+The worker runs each routing job: the agent picks the owning team, and the case is posted
+to that team's channel. Safe to rerun: cases already routed or posted are skipped.
 """
 import argparse
 import asyncio
@@ -19,7 +19,7 @@ from app.models.base import utcnow
 from app.models.cases import CaseMatchKey, CaseTransaction, ExceptionCase
 from app.models.core import BankTransaction, Reconciliation, Workspace
 from app.services import audit
-from app.services.cases.slack_threads import enqueue_case_threads
+from app.services.cases.team_routing import enqueue_routing
 from app.services.exceptions.engine import (
     PRIORITY_DUE_HOURS,
     UNMATCHED_SUMMARY,
@@ -30,7 +30,7 @@ from app.services.exceptions.engine import (
 
 
 async def backfill(dry_run: bool) -> dict:
-    report = {"unmatched_cases_created": 0, "threads_queued": 0, "workspaces": []}
+    report = {"unmatched_cases_created": 0, "routing_jobs_queued": 0, "runs": []}
     async with get_sessionmaker()() as session:
         transaction = await session.begin()
         orphans = (await session.execute(
@@ -66,14 +66,15 @@ async def backfill(dry_run: bool) -> dict:
             report["unmatched_cases_created"] += 1
         await session.flush()
 
-        workspaces = (await session.execute(select(Workspace).where(
-            Workspace.bot_token.is_not(None), Workspace.bot_token != "", Workspace.uninstalled_at.is_(None),
-        ))).scalars().all()
-        for workspace in workspaces:
-            queued = await enqueue_case_threads(session, workspace_id=workspace.id)
-            report["threads_queued"] += queued
-            report["workspaces"].append({"name": workspace.name, "threads_queued": queued,
-                                         "case_channels": workspace.case_channels or {}})
+        runs = (await session.execute(
+            select(Reconciliation).join(Workspace, Workspace.id == Reconciliation.workspace_id).where(
+                Workspace.bot_token.is_not(None), Workspace.bot_token != "", Workspace.uninstalled_at.is_(None),
+            ).order_by(Reconciliation.created_at)
+        )).scalars().all()
+        for run in runs:
+            if await enqueue_routing(session, workspace_id=run.workspace_id, reconciliation_id=run.id):
+                report["routing_jobs_queued"] += 1
+                report["runs"].append({"reconciliation_id": str(run.id), "currency": run.currency})
         if dry_run:
             await transaction.rollback()
         else:

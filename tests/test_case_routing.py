@@ -32,3 +32,13 @@ def test_channel_for_falls_back_to_the_reconciliation_channel():
     assert channel_for("TIMING_DIFFERENCE", {}, "CRECON") == "CRECON"
     assert channel_for("TIMING_DIFFERENCE", {"payments": "CPAY"}, "CRECON") == "CRECON"
     assert channel_for("TIMING_DIFFERENCE", None, None) is None
+
+
+def test_the_agent_reads_a_responsibility_description_for_every_team():
+    from app.services.cases.routing import TEAM_LABELS, TEAM_RESPONSIBILITIES, CaseRoute
+    from app.services.llm.schemas import ROUTING_TEAMS
+
+    assert set(TEAM_RESPONSIBILITIES) == set(TEAM_LABELS) == set(CaseRoute)
+    assert all(len(text) > 40 for text in TEAM_RESPONSIBILITIES.values())
+    # The model's answer schema can only name a team the code knows.
+    assert set(ROUTING_TEAMS) == {str(team) for team in CaseRoute}

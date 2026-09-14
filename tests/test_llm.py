@@ -44,8 +44,8 @@ def client_with(payloads=None, fail_times=0) -> tuple[LLMClient, FakeAnthropic]:
     return LLMClient(api_key="test", model="claude-sonnet-5", client=fake, provider="anthropic"), fake
 
 
-def test_there_are_exactly_five_call_sites():
-    assert len(list(CallSite)) == 5
+def test_there_are_exactly_six_call_sites():
+    assert len(list(CallSite)) == 6
     # L4 is tool-use orchestration and is not schema-constrained.
     assert set(SCHEMAS) == set(CallSite) - {CallSite.L4_ORCHESTRATION}
 
@@ -164,3 +164,18 @@ class TestBudget:
         llm, _ = client_with([{"counterparty": "X"}] * 5)
         llm.budget.counts[CallSite.L2_COUNTERPARTY] = 999
         assert llm.extract_counterparty("TRF FROM SOMETHING NEW") is None
+
+
+def test_case_routing_returns_none_when_the_model_fails_so_rules_route_instead():
+    llm, fake = client_with(fail_times=2)
+    assert llm.route_cases([{"case_ref": "C1"}], {"treasury": "bank fees"}) is None
+    assert len(fake.messages.calls) == 2
+
+
+def test_case_routing_returns_the_schema_constrained_decisions():
+    decision = {"case_ref": "C1", "team": "treasury", "confidence": "HIGH", "reason": "Bank fee."}
+    llm, fake = client_with([{"decisions": [decision]}])
+    assert llm.route_cases([{"case_ref": "C1", "bank_lines": []}], {"treasury": "bank fees"}) == [decision]
+    call = fake.messages.calls[0]
+    assert call["output_config"]["format"]["schema"]["properties"]["decisions"]["items"]["properties"]["team"]["enum"] == ["accounts", "payments", "treasury"]
+    assert "<document_content>" in call["messages"][0]["content"]

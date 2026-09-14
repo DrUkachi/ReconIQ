@@ -16,7 +16,7 @@ from app.models.core import AppUser, Workspace
 from app.models.slack_intake import SlackIntake, SlackIntakeFile
 from app.services import audit
 from app.services.ingestion.files import parse_ledger_csv, parse_signed_pdf
-from app.services.cases.slack_threads import enqueue_case_threads
+from app.services.cases.team_routing import enqueue_routing
 from app.services.ingestion.persistence import import_signed_sources
 from app.services.jobs import queue
 from app.services.matching.persistence import match_reconciliation
@@ -276,7 +276,10 @@ async def process_intake(job, *, sessionmaker=None):
         intake.reconciliation_ids = [str(rid) for rid in ids]
         for summary in summaries:
             counts = ", ".join(f"{key}: {value}" for key, value in summary["bank_status_counts"].items())
-            await say(session, intake, f"{summary['currency']} processing finished. {counts}. Cases: {summary['cases']}.\nRun: {summary['id']}. Review outstanding items before closing the reconciliation.", f"summary:{intake.revision}:{summary['currency']}")
-        # After the summaries, so each team sees its pending cases only once the run is announced.
+            routing = (f" ReconIQ is routing {summary['cases']} exception(s) to the teams that own them." if summary["cases"]
+                       else " No exceptions, so no team was notified.")
+            await say(session, intake, f"{summary['currency']} processing finished. {counts}. Cases: {summary['cases']}.{routing}\nRun: {summary['id']}. Review outstanding items before closing the reconciliation.", f"summary:{intake.revision}:{summary['currency']}")
+        # The agent picks each exception's team in a worker job, after the summaries are queued.
         for rid in ids:
-            await enqueue_case_threads(session, workspace_id=workspace.id, reconciliation_id=rid)
+            await enqueue_routing(session, workspace_id=workspace.id, reconciliation_id=rid,
+                                  notify_channel_id=intake.channel_id, notify_thread_ts=intake.thread_ts)

@@ -14,6 +14,7 @@ PER_SITE_LIMITS: dict[CallSite, int] = {
     CallSite.L3_EVIDENCE_SUMMARY: 10,  # per case
     CallSite.L4_ORCHESTRATION: 6,  # turns per invocation
     CallSite.L5_REPLY_INTENT: 1,  # per reply
+    CallSite.L6_CASE_ROUTING: 10,  # per run: one call per batch of cases, plus a retry
 }
 
 
