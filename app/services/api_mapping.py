@@ -57,6 +57,9 @@ def case_summary(case: ExceptionCase) -> CaseSummary:
         version=case.version,
         resolution_status=case_resolution_status(case.state),
         slack_channel_id=case.slack_channel_id,
+        routed_team=case.routed_team,
+        routed_by=case.routed_by,
+        routing_reason=case.routing_reason,
     )
 
 

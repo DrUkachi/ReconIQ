@@ -3,11 +3,11 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.domain.enums import CaseState
+from app.domain.enums import CaseState, CaseType
 from app.domain.money import format_minor
 from app.models.cases import CaseRecord, CaseTransaction, ExceptionCase
 from app.models.core import BankTransaction, PaymentRecordRow, Workspace
-from app.services.cases.routing import channel_for
+from app.services.cases.routing import CASE_ROUTES, TEAM_LABELS, CaseRoute, channel_for_team
 from app.services.outbox import dispatcher
 from app.services.slack.blocks import build_case_thread_opener
 
@@ -23,6 +23,20 @@ UNRESOLVED_STATES = (
 
 def escape(text: str) -> str:
     return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+def case_team(case: ExceptionCase) -> str:
+    """The decided team, or the rule table's team for a case routed before the agent existed."""
+    return case.routed_team or str(CASE_ROUTES[CaseType(case.type)])
+
+
+def routing_note(case: ExceptionCase) -> str | None:
+    if not case.routed_team:
+        return None
+    label = TEAM_LABELS.get(CaseRoute(case.routed_team), case.routed_team.title())
+    who = "by ReconIQ" if case.routed_by == "agent" else "by rule"
+    reason = f": {escape(case.routing_reason)}" if case.routing_reason else ""
+    return f":compass: Routed to *{label}* {who}{reason}"
 
 
 async def enqueue_case_threads(
@@ -46,7 +60,7 @@ async def enqueue_case_threads(
 
     queued = 0
     for case in (await session.execute(query)).scalars().all():
-        channel = channel_for(case.type, workspace.case_channels, workspace.recon_channel_id)
+        channel = channel_for_team(case_team(case), workspace.case_channels, workspace.recon_channel_id)
         if not channel:
             continue
         message = build_case_thread_opener(
@@ -58,6 +72,7 @@ async def enqueue_case_threads(
             value_at_risk_minor=case.value_at_risk_minor,
             transactions=await _lines(session, case.id),
             currency=case.currency,
+            routing_note=routing_note(case),
         )
         await dispatcher.enqueue(
             session,

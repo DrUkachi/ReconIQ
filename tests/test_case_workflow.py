@@ -273,3 +273,134 @@ async def test_workspace_transaction_list_pages_through_every_line_with_filters_
     assert usd.items and {i.currency for i in usd.items} == {"USD"}
     assert first.currencies == sorted(first.currencies) and "USD" in first.currencies
     assert other_workspace.total == 0 and other_workspace.items == []
+
+
+class FakeRouter:
+    available = True
+
+    def __init__(self, decide):
+        self.decide, self.calls = decide, []
+
+    def route_cases(self, cases, teams):
+        self.calls.append((cases, teams))
+        return [self.decide(case) for case in cases]
+
+
+def route_job(workspace, rid, *, notify=True):
+    from app.services.cases.team_routing import ROUTE_JOB
+
+    payload = {"reconciliation_id": str(rid)}
+    if notify:
+        payload.update(notify_channel_id="C_INTAKE", notify_thread_ts="1700000000.000100")
+    return SimpleNamespace(id=uuid.uuid4(), kind=ROUTE_JOB, workspace_id=workspace.id, payload=payload)
+
+
+async def case_counts(factory, ids):
+    async with factory() as session:
+        rows = dict((await session.execute(select(ExceptionCase.reconciliation_id, func.count()).where(
+            ExceptionCase.reconciliation_id.in_(ids)).group_by(ExceptionCase.reconciliation_id))).all())
+    return {rid: rows.get(rid, 0) for rid in ids}
+
+
+@pytest.mark.asyncio
+async def test_a_run_without_exceptions_notifies_no_team(recon_db):
+    from app.models.infra import Job
+    from app.services.cases.team_routing import enqueue_routing, route_run_cases
+
+    factory, workspace, ids = recon_db
+    clean = [rid for rid, count in (await case_counts(factory, ids)).items() if count == 0]
+    assert clean, "the demo fixture has a currency run with no exceptions"
+    router = FakeRouter(lambda case: {})
+    async with factory() as session, session.begin():
+        assert await enqueue_routing(session, workspace_id=workspace.id, reconciliation_id=clean[0],
+                                     notify_channel_id="C_INTAKE", notify_thread_ts="1.0") is False
+        jobs = await session.scalar(select(func.count()).select_from(Job).where(Job.idempotency_key == f"route-cases:{clean[0]}"))
+    assert jobs == 0
+    assert not await route_run_cases(route_job(workspace, clean[0]), sessionmaker=factory, llm=router)
+    async with factory() as session:
+        posts = await session.scalar(select(func.count()).select_from(SlackOutbox).where(SlackOutbox.workspace_id == workspace.id))
+    assert posts == 0 and router.calls == []
+
+
+@pytest.mark.asyncio
+async def test_the_agent_decides_each_team_and_untrusted_decisions_fall_back_to_rules(recon_db):
+    from app.domain.enums import CaseType
+    from app.models.infra import AuditEvent, Job
+    from app.services.cases.routing import CASE_ROUTES
+    from app.services.cases.team_routing import enqueue_routing, route_run_cases
+
+    factory, workspace, ids = recon_db
+    busiest = max((await case_counts(factory, ids)).items(), key=lambda item: item[1])[0]
+    async with factory() as session, session.begin():
+        assert await enqueue_routing(session, workspace_id=workspace.id, reconciliation_id=busiest,
+                                     notify_channel_id="C_INTAKE", notify_thread_ts="1700000000.000100")
+        assert await session.scalar(select(Job.kind).where(Job.idempotency_key == f"route-cases:{busiest}")) == "route_cases"
+
+    def decide(case):
+        if case["case_ref"] == "C1":
+            return {"case_ref": "C1", "team": "treasury", "confidence": "LOW", "reason": "Not sure."}
+        if case["case_ref"] == "C2":
+            return {"case_ref": "C2", "team": "marketing", "confidence": "HIGH", "reason": "Invented team."}
+        return {"case_ref": case["case_ref"], "team": "treasury", "confidence": "HIGH",
+                "reason": "Bank-side item <!channel> for the bank relationship team."}
+
+    router = FakeRouter(decide)
+    teams = await route_run_cases(route_job(workspace, busiest), sessionmaker=factory, llm=router)
+
+    async with factory() as session:
+        cases = (await session.execute(select(ExceptionCase).where(ExceptionCase.reconciliation_id == busiest)
+                                       .order_by(ExceptionCase.created_at, ExceptionCase.id))).scalars().all()
+        openers = {row.case_id: row for row in (await session.execute(select(SlackOutbox).where(
+            SlackOutbox.builder == CASE_THREAD_BUILDER, SlackOutbox.case_id.in_([c.id for c in cases])))).scalars()}
+        summary = await session.scalar(select(SlackOutbox).where(SlackOutbox.idempotency_key == f"route-summary:{busiest}"))
+        routed_audits = await session.scalar(select(func.count()).select_from(AuditEvent).where(
+            AuditEvent.reconciliation_id == busiest, AuditEvent.action == "CASE_ROUTED"))
+
+    sent_cases, sent_teams = router.calls[0]
+    assert set(sent_teams) == set(CHANNELS)
+    assert {"case_ref", "rule_label", "bank_lines", "ledger_records"} <= set(sent_cases[0])
+    assert len(cases) >= 3 and sum(teams.values()) == len(cases) == len(openers) == routed_audits
+
+    for case in cases[:2]:
+        rule_team = str(CASE_ROUTES[CaseType(case.type)])
+        assert (case.routed_by, case.routed_team) == ("rule", rule_team)
+        assert openers[case.id].channel_id == CHANNELS[rule_team]
+    for case in cases[2:]:
+        assert (case.routed_by, case.routed_team, case.routing_confidence) == ("agent", "treasury", "HIGH")
+        assert openers[case.id].channel_id == CHANNELS["treasury"]
+        text = str(openers[case.id].blocks)
+        assert "Routed to *Treasury* by ReconIQ" in text and "&lt;!channel&gt;" in text and "<!channel>" not in text
+
+    assert (summary.channel_id, summary.thread_ts) == ("C_INTAKE", "1700000000.000100")
+    assert "<#C_TREASURY>" in summary.fallback_text and "not notified" in summary.fallback_text
+
+    # Large runs are decided in batches, one model call each.
+    from app.services.cases.team_routing import BATCH_SIZE
+
+    calls = len(router.calls)
+    assert calls == -(-len(cases) // BATCH_SIZE)
+    assert all(len(batch) <= BATCH_SIZE for batch, _ in router.calls)
+
+    # A replayed job finds nothing left to route: no further model call and no second post.
+    assert not await route_run_cases(route_job(workspace, busiest), sessionmaker=factory, llm=router)
+    async with factory() as session:
+        again = await session.scalar(select(func.count()).select_from(SlackOutbox).where(
+            SlackOutbox.builder == CASE_THREAD_BUILDER, SlackOutbox.case_id.in_([c.id for c in cases])))
+    assert len(router.calls) == calls and again == len(cases)
+
+
+@pytest.mark.asyncio
+async def test_every_exception_is_still_delivered_when_the_agent_is_unavailable(recon_db):
+    from app.services.cases.team_routing import route_run_cases
+
+    factory, workspace, ids = recon_db
+    busiest = max((await case_counts(factory, ids)).items(), key=lambda item: item[1])[0]
+    teams = await route_run_cases(route_job(workspace, busiest, notify=False), sessionmaker=factory,
+                                  llm=SimpleNamespace(available=False))
+    async with factory() as session:
+        cases = (await session.execute(select(ExceptionCase).where(ExceptionCase.reconciliation_id == busiest))).scalars().all()
+        openers = await session.scalar(select(func.count()).select_from(SlackOutbox).where(
+            SlackOutbox.builder == CASE_THREAD_BUILDER, SlackOutbox.case_id.in_([c.id for c in cases])))
+    assert sum(teams.values()) == len(cases) == openers
+    assert {c.routed_by for c in cases} == {"rule"}
+    assert all("agent was unavailable" in c.routing_reason for c in cases)

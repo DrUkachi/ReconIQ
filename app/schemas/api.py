@@ -155,6 +155,9 @@ class CaseSummary(BaseModel):
     version: int = 0
     resolution_status: ResolutionStatus = ResolutionStatus.PENDING
     slack_channel_id: str | None = None
+    routed_team: str | None = None
+    routed_by: str | None = None
+    routing_reason: str | None = None
 
 
 class CaseDetail(CaseSummary):
@@ -194,6 +197,7 @@ class TransactionListItem(TransactionOut):
     case_type: CaseType | None = None
     case_state: CaseState | None = None
     case_permalink: str | None = None
+    case_routed_team: str | None = None
 
 
 class TransactionListPage(BaseModel):

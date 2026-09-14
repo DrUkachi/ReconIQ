@@ -389,6 +389,13 @@ export function ReconciliationDetailView({
                       <Badge value={titleize(item.state)} tone="slate" />
                       <Badge value={formatMoney(item.value_at_risk)} tone="cyan" />
                     </div>
+                    {item.routed_team ? (
+                      <p className="mt-2 text-xs text-slate-500">
+                        Routed to <span className="font-semibold text-slate-700">{titleize(item.routed_team)}</span>{" "}
+                        {item.routed_by === "agent" ? "by ReconIQ" : "by rule"}
+                        {item.routing_reason ? `: ${item.routing_reason}` : ""}
+                      </p>
+                    ) : null}
                     {item.evidence.length ? (
                       <div className="mt-3 rounded-2xl border border-slate-200 bg-white p-3">
                         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">

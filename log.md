@@ -1,5 +1,23 @@
 # Handoff log
 
+## Update: the agent routes exceptions to teams, 2026-09-14
+
+After every run (Slack upload or `run_matching`), `enqueue_routing` queues a `route_cases`
+job only if the run has unresolved exceptions; clean runs queue nothing, so no team is
+messaged. The job (`app/services/cases/team_routing.py`) sends each case's facts (bank
+lines, ledger records, amounts, masked long digit runs, rule label as a hint) plus the
+team responsibility text in `app/services/cases/routing.py` to LLM call site
+L6_CASE_ROUTING, batched 25 cases per call. HIGH/MEDIUM decisions naming a known team
+with a reason are applied (`routed_by=agent`); anything else falls back to the rule table
+(`routed_by=rule`), so every exception reaches exactly one team. Team, confidence and
+reason are stored on the case (migration 0006), audited as CASE_ROUTED, shown in the case
+thread opener, and summarised in the upload thread ("routed N exception(s) to #team (n)").
+Change routing by editing TEAM_RESPONSIBILITIES; channels stay in workspace.case_channels.
+
+Trial on the demo files with the live OpenRouter model: 38/38 cases decided by the agent
+(all HIGH), 29 matched the rule table; differences were interest and FX credits to
+treasury and unexplained debits to payments. 467 tests pass.
+
 ## Update: routed case threads and Resolution Status, 2026-09-13
 
 Every unresolved case is posted as its own thread in the owning team's channel

@@ -263,7 +263,10 @@ export function TransactionsTable({ data, query }: Props) {
                         {item.case_type ? (
                           <div className="space-y-1">
                             <p className="whitespace-nowrap font-medium text-slate-800">{titleize(item.case_type)}</p>
-                            <p className="text-xs text-slate-500">{item.case_state ? titleize(item.case_state) : ""}</p>
+                            <p className="text-xs text-slate-500">
+                              {item.case_state ? titleize(item.case_state) : ""}
+                              {item.case_routed_team ? ` · ${titleize(item.case_routed_team)}` : ""}
+                            </p>
                             {item.case_permalink ? (
                               <a
                                 href={item.case_permalink}

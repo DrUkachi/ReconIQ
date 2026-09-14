@@ -14,7 +14,7 @@ from app.services.llm.schemas import (
 
 logger = logging.getLogger(__name__)
 
-# PRD section 08. Five call sites, no sixth.
+# PRD section 08 call sites, plus L6: choosing the team that owns each exception.
 #
 # The spec's guardrail 1 ("temperature 0 everywhere") is not implementable on the
 # current model generation: sampling parameters were removed on Sonnet 5, Opus 5
@@ -259,6 +259,33 @@ class LLMClient:
                 "assignee": None,
                 "confidence": str(Confidence.LOW),
             }
+
+    # --- L6: owning team for each exception in a run ---------------------------
+
+    def route_cases(self, cases: Sequence[dict[str, Any]], teams: dict[str, str]) -> list[dict[str, Any]] | None:
+        """One decision per case. None on failure; the caller then routes by rule."""
+        try:
+            data = self._structured(
+                CallSite.L6_CASE_ROUTING,
+                system=(
+                    "You route bank reconciliation exceptions to the finance team that owns them. "
+                    "The teams and their responsibilities are listed under TEAMS. For every case in "
+                    "CASES choose exactly one team whose responsibilities best cover resolving it, "
+                    "judging from the bank lines, ledger records, amounts and descriptions. "
+                    "rule_label is a deterministic engine's classification: treat it as a hint, not "
+                    "an answer. Return one decision for every case_ref. reason is one short sentence "
+                    "for a finance user naming the deciding fact; never repeat account numbers. "
+                    "confidence is HIGH when the facts clearly fit one team, MEDIUM when likely, "
+                    "LOW when unsure.\n" + DOCUMENT_GUARD
+                ),
+                user=f"TEAMS: {json.dumps(teams)}\nCASES:\n"
+                + wrap_document(json.dumps(list(cases), ensure_ascii=False)),
+                max_tokens=4096,
+            )
+        except (LLMUnavailable, BankReconError):
+            return None
+        decisions = data.get("decisions")
+        return [d for d in decisions if isinstance(d, dict)] if isinstance(decisions, list) else None
 
 
 def _opt_int(value: Any) -> int | None:

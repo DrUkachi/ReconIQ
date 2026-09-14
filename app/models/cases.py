@@ -53,6 +53,11 @@ class ExceptionCase(Base, TimestampMixin):
     slack_channel_id: Mapped[str | None] = mapped_column(String(32))
     slack_thread_ts: Mapped[str | None] = mapped_column(String(32))
     permalink: Mapped[str | None] = mapped_column(Text)
+    # The owning team, who chose it ("agent" or "rule") and why; shown in the case thread.
+    routed_team: Mapped[str | None] = mapped_column(String(16))
+    routed_by: Mapped[str | None] = mapped_column(String(8))
+    routing_confidence: Mapped[str | None] = mapped_column(String(8))
+    routing_reason: Mapped[str | None] = mapped_column(Text)
 
     # PRD section 14: optimistic locking for concurrent case edits.
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")

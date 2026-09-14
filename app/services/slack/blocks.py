@@ -75,6 +75,7 @@ def build_case_thread_opener(
     value_at_risk_minor: int,
     transactions: Sequence[str] = (),
     currency: str = "NGN",
+    routing_note: str | None = None,
 ) -> dict[str, Any]:
     shown = list(transactions[:MAX_TRANSACTIONS_IN_MESSAGE])
     remainder = len(transactions) - len(shown)
@@ -91,6 +92,8 @@ def build_case_thread_opener(
         if remainder > 0:
             listing += f"\n_and {remainder} more, in the web app_"
         blocks.append(_section(listing))
+    if routing_note:
+        blocks.append(_context(routing_note))
     blocks.append(
         _context(
             "Status: *Pending*. Reply in this thread with what you know; when a reply settles it, "

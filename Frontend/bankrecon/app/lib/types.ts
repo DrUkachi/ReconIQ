@@ -107,6 +107,7 @@ export type TransactionListItem = TransactionOut & {
   case_type: string | null;
   case_state: string | null;
   case_permalink: string | null;
+  case_routed_team: string | null;
 };
 
 export type TransactionListPage = {
@@ -162,6 +163,9 @@ export type CaseSummary = {
   version: number;
   resolution_status: ResolutionStatus;
   slack_channel_id: string | null;
+  routed_team: string | null;
+  routed_by: "agent" | "rule" | null;
+  routing_reason: string | null;
 };
 
 export type CaseDetail = CaseSummary & {

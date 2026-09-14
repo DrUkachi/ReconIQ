@@ -11,6 +11,7 @@ class CallSite(StrEnum):
     L3_EVIDENCE_SUMMARY = "L3_EVIDENCE_SUMMARY"
     L4_ORCHESTRATION = "L4_ORCHESTRATION"
     L5_REPLY_INTENT = "L5_REPLY_INTENT"
+    L6_CASE_ROUTING = "L6_CASE_ROUTING"
 
 
 class ReplyIntent(StrEnum):
@@ -80,9 +81,35 @@ REPLY_INTENT_SCHEMA: dict[str, Any] = {
     "additionalProperties": False,
 }
 
+# Keys of app.services.cases.routing.CaseRoute; tests keep the two in step.
+ROUTING_TEAMS = ("accounts", "payments", "treasury")
+
+CASE_ROUTING_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "decisions": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "case_ref": {"type": "string"},
+                    "team": {"type": "string", "enum": list(ROUTING_TEAMS)},
+                    "confidence": {"type": "string", "enum": [str(c) for c in Confidence]},
+                    "reason": {"type": "string"},
+                },
+                "required": ["case_ref", "team", "confidence", "reason"],
+                "additionalProperties": False,
+            },
+        }
+    },
+    "required": ["decisions"],
+    "additionalProperties": False,
+}
+
 SCHEMAS: dict[CallSite, dict[str, Any]] = {
     CallSite.L1_COLUMN_MAP: COLUMN_MAP_SCHEMA,
     CallSite.L2_COUNTERPARTY: COUNTERPARTY_SCHEMA,
     CallSite.L3_EVIDENCE_SUMMARY: EVIDENCE_SUMMARY_SCHEMA,
     CallSite.L5_REPLY_INTENT: REPLY_INTENT_SCHEMA,
+    CallSite.L6_CASE_ROUTING: CASE_ROUTING_SCHEMA,
 }
